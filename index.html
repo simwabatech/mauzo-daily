@@ -137,11 +137,13 @@ header{background:rgba(15,12,41,0.95);backdrop-filter:blur(12px);border-bottom:1
 .sc.green::before{background:var(--green);}
 .sc.orange::before{background:var(--orange);}
 .sc.blue::before{background:var(--blue);}
+.sc.red::before{background:var(--red);}
 .sc-icon{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;margin-bottom:12px;}
 .sc-icon.purple{background:rgba(124,58,237,0.2);}
 .sc-icon.green{background:rgba(16,185,129,0.2);}
 .sc-icon.orange{background:rgba(245,158,11,0.2);}
 .sc-icon.blue{background:rgba(59,130,246,0.2);}
+.sc-icon.red{background:rgba(239,68,68,0.2);}
 .sc-icon svg{width:18px;height:18px;}
 .sc-icon.purple svg{color:var(--accent3);}
 .sc-icon.green svg{color:var(--green2);}
@@ -445,6 +447,23 @@ footer span{color:var(--accent3);}
   </div>
 </div>
 
+<!-- ══ ADD DEBT MODAL ══ -->
+<div class="mo" id="mDebt">
+  <div class="mb">
+    <button class="mc" onclick="cm('mDebt')">&times;</button>
+    <div class="mh"><h3>Sajili Deni la Mteja</h3><p>Rekodi deni ulilompa mteja.</p></div>
+    <form id="debtForm" onsubmit="return doDebt(event)">
+      <div class="field"><label>Jina la Mteja</label><input type="text" id="dt_cust" placeholder="Jina la mteja" required></div>
+      <div class="field"><label>Namba ya Simu</label><input type="tel" id="dt_phone" placeholder="+255 6XX XXX XXX"></div>
+      <div class="field"><label>Maelezo / Bidhaa</label><input type="text" id="dt_desc" placeholder="Mfano: chaja 2, spika 1"></div>
+      <div class="field"><label>Kiasi cha Deni (TZS)</label><input type="number" id="dt_amt" min="1" placeholder="0" required></div>
+      <div class="field"><label>Tarehe</label><input type="date" id="dt_date" required></div>
+      <button type="submit" class="btn btn-primary btn-full" id="btnDebt">Hifadhi Deni</button>
+      <div class="mmsg" id="dtmsg"></div>
+    </form>
+  </div>
+</div>
+
 <!-- ══ SEND CREDS MODAL (Admin) ══ -->
 <div class="mo" id="mCreds">
   <div class="mb">
@@ -560,7 +579,7 @@ async function dbGetColl(shopId, coll) {
   const {collection,getDocs,query,orderBy} = window._fb;
   try {
     const snap = await getDocs(query(collection(window._db,'shops',shopId,coll),orderBy('createdAt','desc')));
-    return snap.docs.map(d=>({id:d.id,...d.data()}));
+    return snap.docs.map(d=>({...d.data(), id:d.id}));
   } catch(e){ return []; }
 }
 async function dbAddDoc(shopId, coll, data) {
@@ -714,56 +733,68 @@ async function adminDecide(id, status){
 // SHOP DASHBOARD (kila duka linaona data zake pekee)
 // ════════════════════════════════════════════════
 async function renderShopDashboard(shop){
-  const [stock, sales, expenses] = await Promise.all([
-    dbGetColl(shop.id,'stock'), dbGetColl(shop.id,'sales'), dbGetColl(shop.id,'expenses')
+  const [stock, sales, expenses, debts] = await Promise.all([
+    dbGetColl(shop.id,'stock'), dbGetColl(shop.id,'sales'), dbGetColl(shop.id,'expenses'), dbGetColl(shop.id,'debts')
   ]);
   STOCK_CACHE = stock;
-  window._SHOP = {shop, stock, sales, expenses};
+  window._SHOP = {shop, stock, sales, expenses, debts};
 
+  document.getElementById('appMain').innerHTML = `
+  <div class="page wrap">
+    <div class="page-head"><div><h2>${shop.shopName}</h2><p>Habari ${shop.firstName}, karibu kwenye dashibodi yako</p></div></div>
+    <div class="tabs">
+      <button class="tab" data-t="home" onclick="shopTab('home')">🏠 Home</button>
+      <button class="tab" data-t="stock" onclick="shopTab('stock')">📦 Stock</button>
+      <button class="tab" data-t="sales" onclick="shopTab('sales')">💰 Mauzo</button>
+      <button class="tab" data-t="exp" onclick="shopTab('exp')">💸 Matumizi</button>
+      <button class="tab" data-t="debts" onclick="shopTab('debts')">🧾 Madeni</button>
+      <button class="tab" data-t="rpt" onclick="shopTab('rpt')">📊 Ripoti</button>
+    </div>
+    <div id="shopTabBody"></div>
+  </div>`;
+  shopTab('home');
+}
+
+function shopTab(t){
+  document.querySelectorAll('.tabs .tab').forEach(b=>b.classList.toggle('active', b.dataset.t===t));
+  if(t==='home') return renderHomeTab();
+  if(t==='stock') return renderStockTab();
+  if(t==='sales') return renderSalesTab();
+  if(t==='exp') return renderExpTab();
+  if(t==='debts') return renderDebtsTab();
+  if(t==='rpt') return renderRptTab();
+}
+
+function renderHomeTab(){
+  const {stock, sales, debts} = window._SHOP;
   const todaySales = sales.filter(s=>(s.date||'')===today());
   const todayTotal = todaySales.reduce((a,s)=>a+Number(s.total||0),0);
   const todayProfit = todaySales.reduce((a,s)=>a+Number(s.profit||0),0);
   const stockValue = stock.reduce((a,i)=>a+Number(i.qty||0)*Number(i.cost||0),0);
   const lowStock = stock.filter(i=>Number(i.qty||0) <= Number(i.minQty||5));
-
-  document.getElementById('appMain').innerHTML = `
-  <div class="page wrap">
-    <div class="page-head"><div><h2>${shop.shopName}</h2><p>Habari ${shop.firstName}, karibu kwenye dashibodi yako</p></div>
-      <div class="act-btns">
-        <button class="btn btn-primary btn-sm" onclick="openAddStock()">+ Bidhaa</button>
-        <button class="btn btn-green btn-sm" onclick="prepSaleModal()">+ Uuzaji</button>
-        <button class="btn btn-outline btn-sm" onclick="prepExpModal()">+ Matumizi</button>
-      </div>
-    </div>
+  const debtOwed = debts.filter(d=>Number(d.paid||0) < Number(d.amount||0))
+    .reduce((a,d)=>a+(Number(d.amount||0)-Number(d.paid||0)),0);
+  document.getElementById('shopTabBody').innerHTML = `
     <div class="stat-grid">
       <div class="sc purple"><div class="sc-icon purple">📦</div><div class="sc-lbl">Thamani ya Stock</div><div class="sc-num">${tzs(stockValue)}</div></div>
       <div class="sc green"><div class="sc-icon green">💰</div><div class="sc-lbl">Mauzo ya Leo</div><div class="sc-num">${tzs(todayTotal)}</div></div>
       <div class="sc blue"><div class="sc-icon blue">📈</div><div class="sc-lbl">Faida ya Leo</div><div class="sc-num">${tzs(todayProfit)}</div></div>
       <div class="sc orange"><div class="sc-icon orange">⚠️</div><div class="sc-lbl">Bidhaa Chache</div><div class="sc-num">${lowStock.length}</div></div>
+      <div class="sc red"><div class="sc-icon red">🧾</div><div class="sc-lbl">Madeni Yanayodaiwa</div><div class="sc-num">${tzs(debtOwed)}</div></div>
     </div>
-    <div class="tabs">
-      <button class="tab active" data-t="stock" onclick="shopTab('stock')">Stock</button>
-      <button class="tab" data-t="sales" onclick="shopTab('sales')">Mauzo</button>
-      <button class="tab" data-t="exp" onclick="shopTab('exp')">Matumizi</button>
-      <button class="tab" data-t="rpt" onclick="shopTab('rpt')">Ripoti</button>
-    </div>
-    <div id="shopTabBody"></div>
-  </div>`;
-  shopTab('stock');
-}
-
-function shopTab(t){
-  document.querySelectorAll('.tabs .tab').forEach(b=>b.classList.toggle('active', b.dataset.t===t));
-  if(t==='stock') return renderStockTab();
-  if(t==='sales') return renderSalesTab();
-  if(t==='exp') return renderExpTab();
-  if(t==='rpt') return renderRptTab();
+    <div class="act-btns" style="margin-top:16px;flex-wrap:wrap;">
+      <button class="btn btn-primary btn-sm" onclick="openAddStock()">+ Bidhaa</button>
+      <button class="btn btn-green btn-sm" onclick="prepSaleModal()">+ Uuzaji</button>
+      <button class="btn btn-outline btn-sm" onclick="prepExpModal()">+ Matumizi</button>
+      <button class="btn btn-outline btn-sm" onclick="openAddDebt()">+ Deni</button>
+    </div>`;
 }
 
 function renderStockTab(){
   const {stock} = window._SHOP;
   const body = document.getElementById('shopTabBody');
-  if(!stock.length){ body.innerHTML = `<div class="tbl-card"><div class="empty">Hamna bidhaa bado. Bofya "+ Bidhaa" kuanza.</div></div>`; return; }
+  const head = `<div class="tbl-head" style="margin-bottom:14px;"><h3 style="margin:0;">Bidhaa Zangu</h3><button class="btn btn-primary btn-sm" onclick="openAddStock()">+ Bidhaa</button></div>`;
+  if(!stock.length){ body.innerHTML = head+`<div class="tbl-card"><div class="empty">Hamna bidhaa bado. Bofya "+ Bidhaa" kuanza.</div></div>`; return; }
   const cards = stock.map(i=>{
     const low = Number(i.qty||0) <= Number(i.minQty||5);
     return `<div class="stock-card">
@@ -774,30 +805,78 @@ function renderStockTab(){
       <div class="sc-btns"><button class="btn btn-outline btn-xs" onclick="editStock('${i.id}')">Hariri</button><button class="btn btn-red btn-xs" onclick="delStock('${i.id}')">Futa</button></div>
     </div>`;
   }).join('');
-  body.innerHTML = `<div class="stock-grid">${cards}</div>`;
+  body.innerHTML = head+`<div class="stock-grid">${cards}</div>`;
 }
 
 async function delStock(id){
   if(!confirm('Una uhakika unataka kufuta bidhaa hii?')) return;
   await dbDeleteDoc(window._SHOP.shop.id,'stock',id);
   toast('Bidhaa imefutwa','s');
-  await renderShopDashboard(window._SHOP.shop);
+  await renderShopDashboard(window._SHOP.shop); shopTab('stock');
 }
 
 function renderSalesTab(){
   const {sales} = window._SHOP;
   const body = document.getElementById('shopTabBody');
-  if(!sales.length){ body.innerHTML = `<div class="tbl-card"><div class="empty">Hamna mauzo bado.</div></div>`; return; }
+  const head = `<div class="tbl-head" style="margin-bottom:14px;"><h3 style="margin:0;">Mauzo Yangu</h3><button class="btn btn-green btn-sm" onclick="prepSaleModal()">+ Uuzaji</button></div>`;
+  if(!sales.length){ body.innerHTML = head+`<div class="tbl-card"><div class="empty">Hamna mauzo bado.</div></div>`; return; }
   const rows = sales.map(s=>`<tr><td>${s.date||''}</td><td>${s.product}</td><td>${s.qty}</td><td>${tzs(s.total)}</td><td>${tzs(s.profit)}</td><td>${s.pay}</td><td>${s.customer||'-'}</td></tr>`).join('');
-  body.innerHTML = `<div class="tbl-card"><div class="scroll-x"><table><thead><tr><th>Tarehe</th><th>Bidhaa</th><th>Qty</th><th>Jumla</th><th>Faida</th><th>Malipo</th><th>Mteja</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  body.innerHTML = head+`<div class="tbl-card"><div class="scroll-x"><table><thead><tr><th>Tarehe</th><th>Bidhaa</th><th>Qty</th><th>Jumla</th><th>Faida</th><th>Malipo</th><th>Mteja</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 
 function renderExpTab(){
   const {expenses} = window._SHOP;
   const body = document.getElementById('shopTabBody');
-  if(!expenses.length){ body.innerHTML = `<div class="tbl-card"><div class="empty">Hamna matumizi bado.</div></div>`; return; }
+  const head = `<div class="tbl-head" style="margin-bottom:14px;"><h3 style="margin:0;">Matumizi Yangu</h3><button class="btn btn-outline btn-sm" onclick="prepExpModal()">+ Matumizi</button></div>`;
+  if(!expenses.length){ body.innerHTML = head+`<div class="tbl-card"><div class="empty">Hamna matumizi bado.</div></div>`; return; }
   const rows = expenses.map(e=>`<tr><td>${e.date}</td><td>${e.category}</td><td>${e.desc}</td><td>${tzs(e.amount)}</td></tr>`).join('');
-  body.innerHTML = `<div class="tbl-card"><div class="scroll-x"><table><thead><tr><th>Tarehe</th><th>Aina</th><th>Maelezo</th><th>Kiasi</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  body.innerHTML = head+`<div class="tbl-card"><div class="scroll-x"><table><thead><tr><th>Tarehe</th><th>Aina</th><th>Maelezo</th><th>Kiasi</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
+
+function renderDebtsTab(){
+  const {debts} = window._SHOP;
+  const body = document.getElementById('shopTabBody');
+  const head = `<div class="tbl-head" style="margin-bottom:14px;"><h3 style="margin:0;">Madeni ya Wateja</h3><button class="btn btn-outline btn-sm" onclick="openAddDebt()">+ Deni</button></div>`;
+  if(!debts.length){ body.innerHTML = head+`<div class="tbl-card"><div class="empty">Hamna madeni yaliyosajiliwa.</div></div>`; return; }
+  const rows = debts.map(d=>{
+    const bal = Number(d.amount||0)-Number(d.paid||0);
+    const paid = bal<=0;
+    return `<tr><td>${d.date||''}</td><td>${d.customer}<br><span style="color:var(--ink3);font-size:11.5px;">${d.phone||''}</span></td><td>${d.desc||''}</td><td>${tzs(d.amount)}</td><td>${tzs(d.paid||0)}</td><td>${tzs(bal)}</td>
+      <td>${paid?'<span class="badge approved">Imelipwa</span>':`<div class="act-btns"><button class="btn btn-green btn-xs" onclick="payDebt('${d.id}',${bal})">Lipa</button><button class="btn btn-red btn-xs" onclick="delDebt('${d.id}')">Futa</button></div>`}</td></tr>`;
+  }).join('');
+  body.innerHTML = head+`<div class="tbl-card"><div class="scroll-x"><table><thead><tr><th>Tarehe</th><th>Mteja</th><th>Maelezo</th><th>Deni</th><th>Amelipa</th><th>Salio</th><th>Hatua</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
+
+function openAddDebt(){ document.getElementById('dt_date').value = today(); document.getElementById('debtForm').reset(); document.getElementById('dt_date').value = today(); om('mDebt'); }
+async function doDebt(e){
+  e.preventDefault();
+  const shop = window._SHOP.shop;
+  const btn=document.getElementById('btnDebt'); btn.disabled=true;
+  const debt = { customer:document.getElementById('dt_cust').value.trim(), phone:document.getElementById('dt_phone').value.trim(),
+    desc:document.getElementById('dt_desc').value.trim(), amount:Number(document.getElementById('dt_amt').value||0), paid:0, date:document.getElementById('dt_date').value };
+  await dbAddDoc(shop.id,'debts', debt);
+  toast('Deni limesajiliwa','s');
+  cm('mDebt'); e.target.reset();
+  await renderShopDashboard(shop); shopTab('debts');
+  btn.disabled=false; return false;
+}
+async function payDebt(id, balance){
+  const amtStr = prompt('Ameleta kiasi gani sasa? (Salio: '+tzs(balance)+')');
+  if(amtStr===null) return;
+  const amt = Number(amtStr);
+  if(!amt || amt<=0){ toast('Weka kiasi sahihi','e'); return; }
+  const shop = window._SHOP.shop;
+  const debt = window._SHOP.debts.find(d=>d.id===id);
+  const newPaid = Math.min(Number(debt.paid||0)+amt, Number(debt.amount||0));
+  await dbUpdateDoc(shop.id,'debts', id, {paid:newPaid});
+  toast('Malipo yamesajiliwa','s');
+  await renderShopDashboard(shop); shopTab('debts');
+}
+async function delDebt(id){
+  if(!confirm('Una uhakika unataka kufuta deni hili?')) return;
+  await dbDeleteDoc(window._SHOP.shop.id,'debts',id);
+  toast('Deni limefutwa','s');
+  await renderShopDashboard(window._SHOP.shop); shopTab('debts');
 }
 
 function renderRptTab(){
@@ -809,7 +888,8 @@ function renderRptTab(){
       <button class="rf-btn ${CURRENT_RPT==='month'?'active':''}" onclick="setRpt('month')">Mwezi</button>
       <button class="rf-btn ${CURRENT_RPT==='year'?'active':''}" onclick="setRpt('year')">Mwaka</button>
     </div>
-    <div id="rptGrid"></div>`;
+    <div id="rptGrid"></div>
+    <button class="btn btn-primary" style="margin-top:16px;" onclick="downloadStatement()">⬇️ Pakua Taarifa (PDF)</button>`;
   buildRpt();
 }
 function setRpt(p){ CURRENT_RPT = p; renderRptTab(); }
@@ -835,6 +915,52 @@ function buildRpt(){
       </div>
     </div>
     <div class="total-box"><div class="tl">Faida Halisi (Net)</div><div class="ta">${tzs(net)}</div><div class="ts">Faida ya Mauzo − Matumizi</div></div>`;
+}
+
+function downloadStatement(){
+  const {shop, sales, expenses, debts} = window._SHOP;
+  const {from,to} = dateRange(CURRENT_RPT);
+  const s = sales.filter(x=>x.date>=from && x.date<=to);
+  const e = expenses.filter(x=>x.date>=from && x.date<=to);
+  const salesTotal = s.reduce((a,x)=>a+Number(x.total||0),0);
+  const profitTotal = s.reduce((a,x)=>a+Number(x.profit||0),0);
+  const expTotal = e.reduce((a,x)=>a+Number(x.amount||0),0);
+  const net = profitTotal - expTotal;
+  const owed = debts.filter(d=>Number(d.paid||0)<Number(d.amount||0)).reduce((a,d)=>a+(Number(d.amount||0)-Number(d.paid||0)),0);
+  const label = {day:'Leo',week:'Wiki Hii',month:'Mwezi Huu',year:'Mwaka Huu'}[CURRENT_RPT];
+  const salesRows = s.map(x=>`<tr><td>${x.date}</td><td>${x.product}</td><td>${x.qty}</td><td>${tzs(x.total)}</td><td>${tzs(x.profit)}</td></tr>`).join('') || '<tr><td colspan="5" style="text-align:center;color:#888;">Hamna mauzo</td></tr>';
+  const expRows = e.map(x=>`<tr><td>${x.date}</td><td>${x.category}</td><td>${x.desc}</td><td>${tzs(x.amount)}</td></tr>`).join('') || '<tr><td colspan="4" style="text-align:center;color:#888;">Hamna matumizi</td></tr>';
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Taarifa ya Biashara — ${shop.shopName}</title>
+  <style>
+    body{font-family:Arial,Helvetica,sans-serif;color:#111;padding:32px;max-width:800px;margin:0 auto;}
+    h1{margin:0 0 4px;font-size:22px;} .sub{color:#555;margin-bottom:24px;}
+    table{width:100%;border-collapse:collapse;margin:12px 0 24px;font-size:13px;}
+    th,td{border:1px solid #ccc;padding:6px 8px;text-align:left;}
+    th{background:#f2f2f2;}
+    .totals{display:flex;gap:24px;margin:20px 0;flex-wrap:wrap;}
+    .tbox{border:1px solid #ccc;border-radius:8px;padding:12px 18px;}
+    .tbox b{display:block;font-size:18px;margin-top:4px;}
+    .net{background:#f0fdf4;border-color:#86efac;}
+    @media print{ body{padding:10px;} }
+  </style></head><body>
+    <h1>${shop.shopName}</h1>
+    <div class="sub">Taarifa ya Biashara — ${label} &nbsp;|&nbsp; Kipindi: ${from} hadi ${to} &nbsp;|&nbsp; Mmiliki: ${shop.firstName} ${shop.lastName} &nbsp;|&nbsp; ${shop.phone||''}</div>
+    <div class="totals">
+      <div class="tbox">Jumla ya Mauzo<b>${tzs(salesTotal)}</b></div>
+      <div class="tbox">Jumla ya Faida<b>${tzs(profitTotal)}</b></div>
+      <div class="tbox">Jumla ya Matumizi<b>${tzs(expTotal)}</b></div>
+      <div class="tbox net">Faida Halisi<b>${tzs(net)}</b></div>
+      <div class="tbox">Madeni Yanayodaiwa<b>${tzs(owed)}</b></div>
+    </div>
+    <h3>Mauzo</h3>
+    <table><thead><tr><th>Tarehe</th><th>Bidhaa</th><th>Qty</th><th>Jumla</th><th>Faida</th></tr></thead><tbody>${salesRows}</tbody></table>
+    <h3>Matumizi</h3>
+    <table><thead><tr><th>Tarehe</th><th>Aina</th><th>Maelezo</th><th>Kiasi</th></tr></thead><tbody>${expRows}</tbody></table>
+    <p style="color:#888;font-size:11px;margin-top:30px;">Imetengenezwa na Mauzo Daily — ${new Date().toLocaleString()}</p>
+  </body></html>`;
+  const win = window.open('', '_blank');
+  win.document.write(html); win.document.close(); win.focus();
+  setTimeout(()=>win.print(), 350);
 }
 
 // ════════════════════════════════════════════════
