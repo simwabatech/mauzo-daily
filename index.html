@@ -538,6 +538,8 @@ const SS = {
 // ════════════════════════════════════════════════
 const tzs  = n  => 'TZS ' + Number(n||0).toLocaleString();
 const today = () => new Date().toISOString().split('T')[0];
+const addDays = (dateStr, days) => { const d = dateStr ? new Date(dateStr) : new Date(); d.setDate(d.getDate()+days); return d.toISOString().split('T')[0]; };
+const daysLeft = (dateStr) => { if(!dateStr) return -999; const d1=new Date(today()), d2=new Date(dateStr); return Math.ceil((d2-d1)/86400000); };
 const nowt  = () => new Date().toLocaleTimeString('sw-TZ',{hour:'2-digit',minute:'2-digit'});
 const uid   = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
 
@@ -666,6 +668,8 @@ async function renderApp(){
   SS.set({...s, status:shop.status, shopName:shop.shopName, firstName:shop.firstName});
   if(shop.status === 'pending'){ renderPending(shop); return; }
   if(shop.status === 'rejected'){ renderRejected(shop); return; }
+  if(shop.status === 'suspended'){ renderSuspended(shop); return; }
+  if(shop.subscriptionExpiry && daysLeft(shop.subscriptionExpiry) < 0){ renderExpired(shop); return; }
   await renderShopDashboard(shop);
 }
 
@@ -717,6 +721,32 @@ function renderRejected(shop){
     <button class="btn btn-ghost" onclick="doLogout()">Toka</button>
   </div></div>`;
 }
+function renderExpired(shop){
+  document.getElementById('appMain').innerHTML = `
+  <div class="center-pg"><div class="center-box">
+    <div class="ci" style="background:rgba(239,68,68,0.15);font-size:30px;">⏰</div>
+    <h2>Muda wa Matumizi Umeisha</h2>
+    <p>Habari ${shop.firstName}, muda wa matumizi ya <strong>${shop.shopName}</strong> uliisha tarehe ${shop.subscriptionExpiry}. Data zako zote (stock, mauzo, matumizi, madeni) zimehifadhiwa salama — lipa upya ili kuendelea kutumia mfumo.</p>
+    <div class="info-box amber">💳 Lipa kwa M-Pesa: 0612905872<br>📩 Baada ya kulipa, tuma ujumbe wa uthibitisho kwa admin kupitia WhatsApp</div>
+    <div class="act-btns" style="justify-content:center;margin-top:6px;">
+      <a href="https://wa.me/255612905872?text=Habari%2C%20nimelipa%20kuendeleza%20matumizi%20ya%20${encodeURIComponent(shop.shopName)}" target="_blank" class="btn btn-green btn-sm">💬 Tuma Uthibitisho WhatsApp</a>
+      <button class="btn btn-ghost btn-sm" onclick="doLogout()">Toka</button>
+    </div>
+  </div></div>`;
+}
+function renderSuspended(shop){
+  document.getElementById('appMain').innerHTML = `
+  <div class="center-pg"><div class="center-box">
+    <div class="ci" style="background:rgba(148,163,184,0.15);font-size:30px;">⛔</div>
+    <h2>Akaunti Imesimamishwa Kwa Muda</h2>
+    <p>Habari ${shop.firstName}, akaunti ya <strong>${shop.shopName}</strong> imesimamishwa kwa muda na admin. Data zako zote (stock, mauzo, matumizi, madeni) zipo salama na hazijafutwa — utaweza kuendelea mara akaunti ikirejeshwa.</p>
+    <div class="info-box amber">📩 Kwa maelezo zaidi wasiliana na admin</div>
+    <div class="act-btns" style="justify-content:center;margin-top:6px;">
+      <a href="https://wa.me/255612905872" target="_blank" class="btn btn-green btn-sm">💬 Wasiliana WhatsApp</a>
+      <button class="btn btn-ghost btn-sm" onclick="doLogout()">Toka</button>
+    </div>
+  </div></div>`;
+}
 
 // ════════════════════════════════════════════════
 // ADMIN DASHBOARD (haoni data za maduka — anaona tu majina/maombi)
@@ -725,20 +755,22 @@ async function renderAdmin(){
   const shops = await dbShops();
   const pending = shops.filter(s=>s.status==='pending');
   const approved = shops.filter(s=>s.status==='approved');
+  const suspended = shops.filter(s=>s.status==='suspended');
   const rejected = shops.filter(s=>s.status==='rejected');
-  window._ADM = {pending,approved,rejected};
+  window._ADM = {pending,approved,suspended,rejected};
   document.getElementById('appMain').innerHTML = `
   <div class="page wrap">
     <div class="page-head"><div><h2>Dashibodi ya Admin</h2><p>Simamia maombi ya usajili wa maduka</p></div></div>
     <div class="stat-grid">
       <div class="sc purple"><div class="sc-icon purple">⏳</div><div class="sc-lbl">Yanayosubiri</div><div class="sc-num">${pending.length}</div></div>
       <div class="sc green"><div class="sc-icon green">✓</div><div class="sc-lbl">Yaliyoruhusiwa</div><div class="sc-num">${approved.length}</div></div>
-      <div class="sc orange"><div class="sc-icon orange">✕</div><div class="sc-lbl">Yaliyokataliwa</div><div class="sc-num">${rejected.length}</div></div>
+      <div class="sc orange"><div class="sc-icon orange">⛔</div><div class="sc-lbl">Zilizosimamishwa</div><div class="sc-num">${suspended.length}</div></div>
       <div class="sc blue"><div class="sc-icon blue">🏬</div><div class="sc-lbl">Jumla ya Maduka</div><div class="sc-num">${shops.length}</div></div>
     </div>
     <div class="tabs">
       <button class="tab active" data-t="pend" onclick="adminTab('pend')">Maombi Yanayosubiri <span class="tab-badge">${pending.length}</span></button>
       <button class="tab" data-t="appr" onclick="adminTab('appr')">Maduka Yaliyoruhusiwa</button>
+      <button class="tab" data-t="susp" onclick="adminTab('susp')">Zilizosimamishwa</button>
       <button class="tab" data-t="rej" onclick="adminTab('rej')">Yaliyokataliwa</button>
     </div>
     <div id="adminTabBody"></div>
@@ -748,10 +780,50 @@ async function renderAdmin(){
 
 function adminTab(t){
   document.querySelectorAll('.tabs .tab').forEach(b=>b.classList.toggle('active', b.dataset.t===t));
-  const {pending,approved,rejected} = window._ADM;
+  const {pending,approved,suspended,rejected} = window._ADM;
   const body = document.getElementById('adminTabBody');
-  const list = t==='pend'?pending : t==='appr'?approved : rejected;
+  const list = t==='pend'?pending : t==='appr'?approved : t==='susp'?suspended : rejected;
   if(!list.length){ body.innerHTML = `<div class="tbl-card"><div class="empty">Hamna taarifa hapa kwa sasa</div></div>`; return; }
+
+  if(t==='appr'){
+    const rows = list.map(s=>{
+      const dl = daysLeft(s.subscriptionExpiry);
+      let statusHtml;
+      if(!s.subscriptionExpiry) statusHtml = `<span class="badge" style="background:rgba(148,163,184,0.18);color:#94a3b8;">Bado hakuna tarehe</span>`;
+      else if(dl<0) statusHtml = `<span class="badge rejected">Muda Umeisha</span>`;
+      else if(dl<=7) statusHtml = `<span class="badge" style="background:rgba(251,191,36,0.18);color:#fbbf24;">Siku ${dl} zimebaki</span>`;
+      else statusHtml = `<span class="badge approved">Siku ${dl} zimebaki</span>`;
+      return `<tr>
+        <td><strong>${s.shopName}</strong><br><span style="color:var(--ink3);font-size:11.5px;">${s.location||''}</span></td>
+        <td>${s.firstName} ${s.lastName}</td>
+        <td>${s.phone}</td>
+        <td>${s.subscriptionExpiry||'-'}<br>${statusHtml}</td>
+        <td><div class="act-btns">
+          <button class="btn btn-green btn-xs" onclick="adminRenew('${s.id}','${s.subscriptionExpiry||''}')">+ Miezi 3</button>
+          <button class="btn btn-outline btn-xs" onclick="adminSuspend('${s.id}')">Simamisha</button>
+          <button class="btn btn-red btn-xs" onclick="adminDeleteShop('${s.id}','${s.shopName}')">Futa Kabisa</button>
+        </div></td>
+      </tr>`;
+    }).join('');
+    body.innerHTML = `<div class="tbl-card"><div class="scroll-x"><table><thead><tr><th>Duka</th><th>Mmiliki</th><th>Simu</th><th>Muda wa Malipo</th><th>Hatua</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+    return;
+  }
+
+  if(t==='susp'){
+    const rows = list.map(s=>`<tr>
+      <td><strong>${s.shopName}</strong><br><span style="color:var(--ink3);font-size:11.5px;">${s.location||''}</span></td>
+      <td>${s.firstName} ${s.lastName}</td>
+      <td>${s.phone}</td>
+      <td><span class="badge" style="background:rgba(148,163,184,0.18);color:#94a3b8;">Imesimamishwa</span></td>
+      <td><div class="act-btns">
+        <button class="btn btn-green btn-xs" onclick="adminUnsuspend('${s.id}')">Rejesha</button>
+        <button class="btn btn-red btn-xs" onclick="adminDeleteShop('${s.id}','${s.shopName}')">Futa Kabisa</button>
+      </div></td>
+    </tr>`).join('');
+    body.innerHTML = `<div class="tbl-card"><div class="scroll-x"><table><thead><tr><th>Duka</th><th>Mmiliki</th><th>Simu</th><th>Hali</th><th>Hatua</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+    return;
+  }
+
   const rows = list.map(s=>`
     <tr>
       <td><strong>${s.shopName}</strong><br><span style="color:var(--ink3);font-size:11.5px;">${s.location||''}</span></td>
@@ -759,14 +831,48 @@ function adminTab(t){
       <td>${s.email}</td>
       <td>${s.phone}</td>
       <td>${(s.regDate||'').split('T')[0]}</td>
-      <td>${t==='pend' ? `<div class="act-btns"><button class="btn btn-green btn-xs" onclick="adminDecide('${s.id}','approved')">Kubali</button><button class="btn btn-red btn-xs" onclick="adminDecide('${s.id}','rejected')">Kataa</button></div>` : `<span class="badge ${s.status}">${s.status==='approved'?'Ameruhusiwa':'Amekataliwa'}</span>`}</td>
+      <td>${t==='pend' ? `<div class="act-btns"><button class="btn btn-green btn-xs" onclick="adminDecide('${s.id}','approved')">Kubali</button><button class="btn btn-red btn-xs" onclick="adminDecide('${s.id}','rejected')">Kataa</button></div>` : `<div class="act-btns"><span class="badge ${s.status}">Amekataliwa</span><button class="btn btn-red btn-xs" onclick="adminDeleteShop('${s.id}','${s.shopName}')">Futa Kabisa</button></div>`}</td>
     </tr>`).join('');
   body.innerHTML = `<div class="tbl-card"><div class="scroll-x"><table><thead><tr><th>Duka</th><th>Mmiliki</th><th>Email</th><th>Simu</th><th>Tarehe</th><th>Hatua</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 
 async function adminDecide(id, status){
-  await dbUpdateShop(id, {status});
-  toast(status==='approved' ? 'Duka limeruhusiwa' : 'Ombi limekataliwa', 's');
+  const patch = {status};
+  if(status==='approved') patch.subscriptionExpiry = addDays(null,90);
+  await dbUpdateShop(id, patch);
+  toast(status==='approved' ? 'Duka limeruhusiwa \u2014 malipo halali kwa miezi 3' : 'Ombi limekataliwa', 's');
+  await renderAdmin();
+}
+
+async function adminRenew(id, currentExpiry){
+  if(!confirm('Umehakikisha umepokea malipo ya miezi 3 kutoka kwa duka hili?')) return;
+  const base = daysLeft(currentExpiry) > 0 ? currentExpiry : today();
+  const newExpiry = addDays(base, 90);
+  await dbUpdateShop(id, {subscriptionExpiry:newExpiry});
+  toast('Muda umeongezwa hadi '+newExpiry,'s');
+  await renderAdmin();
+}
+
+async function adminSuspend(id){
+  if(!confirm('Simamisha akaunti hii kwa muda? Data zake hazitafutwa.')) return;
+  await dbUpdateShop(id, {status:'suspended'});
+  toast('Akaunti imesimamishwa kwa muda','s');
+  await renderAdmin();
+}
+async function adminUnsuspend(id){
+  await dbUpdateShop(id, {status:'approved'});
+  toast('Akaunti imerejeshwa','s');
+  await renderAdmin();
+}
+async function adminDeleteShop(id, name){
+  if(!confirm('UNA UHAKIKA? Hii itafuta KABISA akaunti ya "'+name+'" pamoja na stock, mauzo, matumizi na madeni yake YOTE. Hatua hii HAIWEZI kurudishwa.')) return;
+  if(!confirm('Uthibitisho wa mwisho: andika/bonyeza OK kufuta "'+name+'" milele.')) return;
+  for(const coll of ['stock','sales','expenses','debts']){
+    const docs = await dbGetColl(id, coll);
+    for(const d of docs){ await dbDeleteDoc(id, coll, d.id); }
+  }
+  await dbDeleteShop(id);
+  toast('Duka limefutwa kabisa','s');
   await renderAdmin();
 }
 
@@ -807,7 +913,7 @@ function shopTab(t){
 }
 
 function renderHomeTab(){
-  const {stock, sales, debts} = window._SHOP;
+  const {shop, stock, sales, debts} = window._SHOP;
   const todaySales = sales.filter(s=>(s.date||'')===today());
   const todayTotal = todaySales.reduce((a,s)=>a+Number(s.total||0),0);
   const todayProfit = todaySales.reduce((a,s)=>a+Number(s.profit||0),0);
@@ -815,7 +921,10 @@ function renderHomeTab(){
   const lowStock = stock.filter(i=>Number(i.qty||0) <= Number(i.minQty||5));
   const debtOwed = debts.filter(d=>Number(d.paid||0) < Number(d.amount||0))
     .reduce((a,d)=>a+(Number(d.amount||0)-Number(d.paid||0)),0);
+  const dl = shop.subscriptionExpiry ? daysLeft(shop.subscriptionExpiry) : null;
+  const expiryBanner = (dl!==null && dl>=0 && dl<=7) ? `<div class="info-box amber" style="margin-bottom:14px;">⏰ Muda wako wa matumizi unaisha baada ya siku ${dl} (${shop.subscriptionExpiry}). Lipa mapema ili kuepuka kukatika kwa huduma. <a href="https://wa.me/255612905872" target="_blank" style="color:#fbbf24;text-decoration:underline;">Wasiliana kulipa</a></div>` : '';
   document.getElementById('shopTabBody').innerHTML = `
+    ${expiryBanner}
     <div class="stat-grid">
       <div class="sc purple"><div class="sc-icon purple">📦</div><div class="sc-lbl">Thamani ya Stock</div><div class="sc-num">${tzs(stockValue)}</div></div>
       <div class="sc green"><div class="sc-icon green">💰</div><div class="sc-lbl">Mauzo ya Leo</div><div class="sc-num">${tzs(todayTotal)}</div></div>
