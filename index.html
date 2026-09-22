@@ -968,6 +968,13 @@ function renderHomeTab(){
     .reduce((a,d)=>a+(Number(d.amount||0)-Number(d.paid||0)),0);
   const dl = shop.subscriptionExpiry ? daysLeft(shop.subscriptionExpiry) : null;
   const expiryBanner = (dl!==null && dl>=0 && dl<=7) ? `<div class="info-box amber" style="margin-bottom:14px;">⏰ Muda wako wa matumizi unaisha baada ya siku ${dl} (${shop.subscriptionExpiry}). Lipa mapema ili kuepuka kukatika kwa huduma. <a href="https://wa.me/255612905872" target="_blank" style="color:#fbbf24;text-decoration:underline;">Wasiliana kulipa</a></div>` : '';
+  const lowStockList = lowStock.length ? `
+    <div class="tbl-card" style="margin-top:14px;">
+      <h3 style="margin:0 0 10px;font-size:15px;">⚠️ Bidhaa Zinazokaribia Kuisha</h3>
+      <div class="scroll-x"><table><thead><tr><th>Bidhaa</th><th>Iliyopo</th><th>Kiwango cha Chini</th><th></th></tr></thead><tbody>
+        ${lowStock.map(i=>`<tr><td>${i.name}</td><td class="low-qty" style="font-weight:700;">${i.qty}</td><td>${i.minQty||5}</td><td><button class="btn btn-outline btn-xs" onclick="editStock('${i.id}')">Ongeza Stock</button></td></tr>`).join('')}
+      </tbody></table></div>
+    </div>` : '';
   document.getElementById('shopTabBody').innerHTML = `
     ${expiryBanner}
     <div class="stat-grid">
@@ -977,6 +984,7 @@ function renderHomeTab(){
       <div class="sc orange"><div class="sc-icon orange">⚠️</div><div class="sc-lbl">Bidhaa Chache</div><div class="sc-num">${lowStock.length}</div></div>
       <div class="sc red"><div class="sc-icon red">🧾</div><div class="sc-lbl">Madeni Yanayodaiwa</div><div class="sc-num">${tzs(debtOwed)}</div></div>
     </div>
+    ${lowStockList}
     <div class="act-btns" style="margin-top:16px;flex-wrap:wrap;">
       <button class="btn btn-primary btn-sm" onclick="openAddStock()">+ Bidhaa</button>
       <button class="btn btn-green btn-sm" onclick="prepSaleModal()">+ Uuzaji</button>
@@ -1097,6 +1105,23 @@ function buildRpt(){
   const profitTotal = s.reduce((a,x)=>a+Number(x.profit||0),0);
   const expTotal = e.reduce((a,x)=>a+Number(x.amount||0),0);
   const net = profitTotal - expTotal;
+
+  const byProduct = {};
+  s.forEach(x=>{
+    const k = x.product||'Bidhaa';
+    if(!byProduct[k]) byProduct[k] = {qty:0, total:0};
+    byProduct[k].qty += Number(x.qty||0);
+    byProduct[k].total += Number(x.total||0);
+  });
+  const topProducts = Object.entries(byProduct).sort((a,b)=>b[1].qty-a[1].qty).slice(0,5);
+  const topHtml = topProducts.length ? `
+    <div class="tbl-card" style="margin-top:14px;">
+      <h3 style="margin:0 0 10px;font-size:15px;">🏆 Bidhaa Zinazouzwa Sana</h3>
+      <div class="scroll-x"><table><thead><tr><th>#</th><th>Bidhaa</th><th>Idadi Iliyouzwa</th><th>Mapato</th></tr></thead><tbody>
+        ${topProducts.map(([name,v],idx)=>`<tr><td>${idx+1}</td><td>${name}</td><td>${v.qty}</td><td>${tzs(v.total)}</td></tr>`).join('')}
+      </tbody></table></div>
+    </div>` : '';
+
   document.getElementById('rptGrid').innerHTML = `
     <div class="rpt-grid">
       <div class="rpt-card"><h4>💰 Muhtasari wa Mauzo</h4>
@@ -1109,6 +1134,7 @@ function buildRpt(){
         <div class="rpt-row"><span class="rl">Jumla ya Matumizi</span><span class="rv r">${tzs(expTotal)}</span></div>
       </div>
     </div>
+    ${topHtml}
     <div class="total-box"><div class="tl">Faida Halisi (Net)</div><div class="ta">${tzs(net)}</div><div class="ts">Faida ya Mauzo − Matumizi</div></div>`;
 }
 
@@ -1123,6 +1149,10 @@ function downloadStatement(){
   const net = profitTotal - expTotal;
   const owed = debts.filter(d=>Number(d.paid||0)<Number(d.amount||0)).reduce((a,d)=>a+(Number(d.amount||0)-Number(d.paid||0)),0);
   const label = {day:'Leo',week:'Wiki Hii',month:'Mwezi Huu',year:'Mwaka Huu'}[CURRENT_RPT];
+  const byProduct = {};
+  s.forEach(x=>{ const k=x.product||'Bidhaa'; if(!byProduct[k]) byProduct[k]={qty:0,total:0}; byProduct[k].qty+=Number(x.qty||0); byProduct[k].total+=Number(x.total||0); });
+  const topProducts = Object.entries(byProduct).sort((a,b)=>b[1].qty-a[1].qty).slice(0,5);
+  const topRows = topProducts.map(([name,v],idx)=>`<tr><td>${idx+1}</td><td>${name}</td><td>${v.qty}</td><td>${tzs(v.total)}</td></tr>`).join('') || '<tr><td colspan="4" style="text-align:center;color:#888;">Hamna mauzo</td></tr>';
   const salesRows = s.map(x=>`<tr><td>${x.date}</td><td>${x.product}</td><td>${x.qty}</td><td>${tzs(x.total)}</td><td>${tzs(x.profit)}</td></tr>`).join('') || '<tr><td colspan="5" style="text-align:center;color:#888;">Hamna mauzo</td></tr>';
   const expRows = e.map(x=>`<tr><td>${x.date}</td><td>${x.category}</td><td>${x.desc}</td><td>${tzs(x.amount)}</td></tr>`).join('') || '<tr><td colspan="4" style="text-align:center;color:#888;">Hamna matumizi</td></tr>';
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Taarifa ya Biashara — ${shop.shopName}</title>
@@ -1147,6 +1177,8 @@ function downloadStatement(){
       <div class="tbox net">Faida Halisi<b>${tzs(net)}</b></div>
       <div class="tbox">Madeni Yanayodaiwa<b>${tzs(owed)}</b></div>
     </div>
+    <h3>Bidhaa Zinazouzwa Sana</h3>
+    <table><thead><tr><th>#</th><th>Bidhaa</th><th>Idadi</th><th>Mapato</th></tr></thead><tbody>${topRows}</tbody></table>
     <h3>Mauzo</h3>
     <table><thead><tr><th>Tarehe</th><th>Bidhaa</th><th>Qty</th><th>Jumla</th><th>Faida</th></tr></thead><tbody>${salesRows}</tbody></table>
     <h3>Matumizi</h3>
