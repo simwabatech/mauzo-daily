@@ -2,7 +2,7 @@
   "name": "Mauzo Daily",
   "short_name": "Mauzo Daily",
   "description": "Simamia mauzo, stock, matumizi na madeni ya duka lako",
-  "start_url": "./mauzo-daily.html",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "background_color": "#0f0c29",
