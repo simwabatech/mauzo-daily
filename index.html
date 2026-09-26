@@ -446,6 +446,7 @@ footer span{color:var(--accent3);}
     <div class="mh"><h3>Rekodi Uuzaji</h3><p>Chagua bidhaa iliyouzwa kutoka stokuni.</p></div>
     <form onsubmit="return doSale(event)">
       <div class="field"><label>Chagua Bidhaa</label>
+        <input type="text" id="sl_search" placeholder="Tafuta jina la bidhaa..." oninput="filterProdSelect()" style="margin-bottom:8px;background:var(--card2);border:1px solid var(--line);color:var(--ink);border-radius:10px;padding:9px 12px;font-size:13px;width:100%;">
         <select id="sl_prod" required onchange="onProdSelect()"><option value="">-- Chagua Bidhaa --</option></select></div>
       <div id="saleDetails" style="display:none">
         <div class="frow">
@@ -1365,8 +1366,18 @@ async function doAddStock(e){
 function prepSaleModal(){
   const sel = document.getElementById('sl_prod');
   sel.innerHTML = '<option value="">-- Chagua Bidhaa --</option>' + STOCK_CACHE.filter(i=>i.qty>0).map(i=>`<option value="${i.id}">${i.name} (Stock: ${i.qty})</option>`).join('');
+  document.getElementById('sl_search').value = '';
   document.getElementById('saleDetails').style.display='none';
   om('mSale');
+}
+function filterProdSelect(){
+  const q = document.getElementById('sl_search').value.toLowerCase();
+  const sel = document.getElementById('sl_prod');
+  const current = sel.value;
+  const matches = STOCK_CACHE.filter(i=>i.qty>0 && i.name.toLowerCase().includes(q));
+  sel.innerHTML = '<option value="">-- Chagua Bidhaa --</option>' + matches.map(i=>`<option value="${i.id}">${i.name} (Stock: ${i.qty})</option>`).join('');
+  if(matches.some(i=>i.id===current)) sel.value = current;
+  else { document.getElementById('saleDetails').style.display='none'; }
 }
 function onProdSelect(){
   const id = document.getElementById('sl_prod').value;
