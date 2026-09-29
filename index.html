@@ -964,7 +964,7 @@ function shopTab(t){
 
 function renderHomeTab(){
   const {shop, stock, sales, debts} = window._SHOP;
-  const todaySales = sales.filter(s=>(s.date||'')===today());
+  const todaySales = sales.filter(s=>(s.date||'')===today() && !s.refunded);
   const todayTotal = todaySales.reduce((a,s)=>a+Number(s.total||0),0);
   const todayProfit = todaySales.reduce((a,s)=>a+Number(s.profit||0),0);
   const stockValue = stock.reduce((a,i)=>a+Number(i.qty||0)*Number(i.cost||0),0);
@@ -1059,8 +1059,35 @@ function renderSalesTab(){
   if(!sales.length){ body.innerHTML = head+`<div class="tbl-card"><div class="empty">Hamna mauzo bado.</div></div>`; return; }
   const filtered = SALES_SEARCH ? sales.filter(s=>(s.product||'').toLowerCase().includes(SALES_SEARCH.toLowerCase())) : sales;
   if(!filtered.length){ body.innerHTML = head+`<div class="tbl-card"><div class="empty">Hamna mauzo yanayolingana na "${SALES_SEARCH}".</div></div>`; return; }
-  const rows = filtered.map(s=>`<tr><td>${s.date||''}</td><td>${s.product}</td><td>${s.qty}</td><td>${tzs(s.total)}</td><td>${tzs(s.profit)}</td><td>${s.pay}</td><td>${s.customer||'-'}</td></tr>`).join('');
-  body.innerHTML = head+`<div class="tbl-card"><div class="scroll-x"><table><thead><tr><th>Tarehe</th><th>Bidhaa</th><th>Qty</th><th>Jumla</th><th>Faida</th><th>Malipo</th><th>Mteja</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  const rows = filtered.map(s=>`<tr${s.refunded?' style="opacity:.55;"':''}>
+    <td>${s.date||''}</td><td>${s.product}</td><td>${s.qty}</td><td>${tzs(s.total)}</td><td>${tzs(s.profit)}</td><td>${s.pay}</td><td>${s.customer||'-'}</td>
+    <td>${s.refunded ? `<span class="badge rejected">Imerejeshwa</span>` : `<div class="act-btns"><button class="btn btn-outline btn-xs" onclick="refundSale('${s.id}')">Rejesha</button><button class="btn btn-red btn-xs" onclick="delSaleRecord('${s.id}')">Futa</button></div>`}</td>
+  </tr>`).join('');
+  body.innerHTML = head+`<div class="tbl-card"><div class="scroll-x"><table><thead><tr><th>Tarehe</th><th>Bidhaa</th><th>Qty</th><th>Jumla</th><th>Faida</th><th>Malipo</th><th>Mteja</th><th>Hatua</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
+
+async function refundSale(id){
+  if(!confirm('Rejesha mauzo haya? Stock itarudishwa na hii mauzo hayatahesabiwa tena kwenye mapato/faida, lakini rekodi itabaki kwa kumbukumbu.')) return;
+  const shop = window._SHOP.shop;
+  const sale = window._SHOP.sales.find(x=>x.id===id);
+  if(!sale) return;
+  const item = window._SHOP.stock.find(i=>i.id===sale.productId);
+  if(item){ await dbUpdateDoc(shop.id,'stock', item.id, { qty: Number(item.qty||0) + Number(sale.qty||0) }); }
+  await dbUpdateDoc(shop.id,'sales', id, { refunded:true });
+  toast('Mauzo yamerejeshwa na stock imerudishwa','s');
+  await renderShopDashboard(shop); shopTab('sales');
+}
+
+async function delSaleRecord(id){
+  if(!confirm('Futa rekodi hii ya mauzo KABISA? Ikiwa bidhaa bado ipo stokuni, stock itarudishwa. Hatua hii haiwezi kurudishwa.')) return;
+  const shop = window._SHOP.shop;
+  const sale = window._SHOP.sales.find(x=>x.id===id);
+  if(!sale) return;
+  const item = window._SHOP.stock.find(i=>i.id===sale.productId);
+  if(item){ await dbUpdateDoc(shop.id,'stock', item.id, { qty: Number(item.qty||0) + Number(sale.qty||0) }); }
+  await dbDeleteDoc(shop.id,'sales', id);
+  toast('Mauzo yamefutwa na stock imerudishwa','s');
+  await renderShopDashboard(shop); shopTab('sales');
 }
 function setSalesSearch(v){
   SALES_SEARCH = v;
@@ -1143,7 +1170,7 @@ function setRpt(p){ CURRENT_RPT = p; renderRptTab(); }
 function buildRpt(){
   const {sales, expenses} = window._SHOP;
   const {from,to} = dateRange(CURRENT_RPT);
-  const s = sales.filter(x=>x.date>=from && x.date<=to);
+  const s = sales.filter(x=>x.date>=from && x.date<=to && !x.refunded);
   const e = expenses.filter(x=>x.date>=from && x.date<=to);
   const salesTotal = s.reduce((a,x)=>a+Number(x.total||0),0);
   const profitTotal = s.reduce((a,x)=>a+Number(x.profit||0),0);
@@ -1185,7 +1212,7 @@ function buildRpt(){
 function downloadStatement(){
   const {shop, sales, expenses, debts} = window._SHOP;
   const {from,to} = dateRange(CURRENT_RPT);
-  const s = sales.filter(x=>x.date>=from && x.date<=to);
+  const s = sales.filter(x=>x.date>=from && x.date<=to && !x.refunded);
   const e = expenses.filter(x=>x.date>=from && x.date<=to);
   const salesTotal = s.reduce((a,x)=>a+Number(x.total||0),0);
   const profitTotal = s.reduce((a,x)=>a+Number(x.profit||0),0);
