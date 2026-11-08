@@ -13,7 +13,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getFirestore, collection, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, query, where, orderBy, addDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, collection, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, query, where, orderBy, addDoc, serverTimestamp, runTransaction } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 const firebaseConfig = {
   apiKey:"AIzaSyCXFxhsi6mRBLn9JNpzGr6QdzS71CmFQis",
   authDomain:"mauzo-daily.firebaseapp.com",
@@ -25,7 +25,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db  = getFirestore(app);
 window._db = db;
-window._fb = { collection,doc,setDoc,getDoc,getDocs,updateDoc,deleteDoc,query,where,orderBy,addDoc,serverTimestamp };
+window._fb = { collection,doc,setDoc,getDoc,getDocs,updateDoc,deleteDoc,query,where,orderBy,addDoc,serverTimestamp,runTransaction };
 window.dispatchEvent(new Event('fb-ready'));
 </script>
 <style>
@@ -80,6 +80,8 @@ a{color:inherit;text-decoration:none;}
 /* ── HEADER ── */
 header{background:var(--header-bg);backdrop-filter:blur(12px);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:100;}
 .nav{display:flex;align-items:center;justify-content:space-between;padding:13px 20px;max-width:1180px;margin:0 auto;gap:12px;}
+.adv-entry{margin-top:12px;font-size:11.5px;opacity:.7;}
+.adv-entry a{color:var(--ink3);font-weight:500;text-decoration:underline;cursor:pointer;}
 .theme-toggle{width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:var(--card);font-size:16px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:.15s;}
 .theme-toggle:hover{border-color:var(--accent);transform:scale(1.06);}
 .logo{display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;}
@@ -359,6 +361,7 @@ footer span{color:var(--accent3);}
       <div class="mmsg" id="smsg"></div>
     </form>
     <div class="mfoot">Una akaunti? <a onclick="cm('mSignup');om('mLogin')">Ingia hapa</a></div>
+    <div class="mfoot adv-entry"><a onclick="cm('mSignup');openAdv('reg')">Una wafanyakazi au maduka zaidi ya moja? Akaunti ya Kina</a></div>
   </div>
 </div>
 
@@ -378,6 +381,7 @@ footer span{color:var(--accent3);}
     </form>
     <div class="mfoot" style="margin-top:10px;"><a onclick="cm('mLogin');om('mReset')">Umesahau password?</a></div>
     <div class="mfoot" style="margin-top:8px;">Hauna akaunti? <a onclick="cm('mLogin');om('mSignup')">Sajili duka hapa</a></div>
+    <div class="mfoot adv-entry"><a onclick="cm('mLogin');openAdv('own')">Akaunti ya Kina (Mmiliki / Mfanyakazi)</a></div>
   </div>
 </div>
 
@@ -408,6 +412,7 @@ footer span{color:var(--accent3);}
     <div class="mh"><h3 id="stockModalTitle">Ongeza Bidhaa Stokuni</h3><p>Sajili bidhaa mpya au hariri bidhaa iliyopo.</p></div>
     <form onsubmit="return doAddStock(event)">
       <input type="hidden" id="st_edit_id" value="">
+      <input type="hidden" id="st_orig_qty" value="0">
       <div class="frow">
         <div class="field"><label>Jina la Bidhaa</label><input type="text" id="st_name" placeholder="Infinix Charger 18W" required></div>
         <div class="field"><label>Kategoria</label>
@@ -419,7 +424,7 @@ footer span{color:var(--accent3);}
           </select></div>
       </div>
       <div class="frow">
-        <div class="field"><label>Idadi (Qty)</label><input type="number" id="st_qty" min="1" value="1" required></div>
+        <div class="field"><label>Idadi (Qty)</label><input type="number" id="st_qty" min="0" value="1" required></div>
         <div class="field"><label>Bei ya Kununulia (TZS)</label><input type="number" id="st_cost" min="0" placeholder="0" required oninput="calcStockTotal()"></div>
       </div>
       <div class="frow">
@@ -427,6 +432,7 @@ footer span{color:var(--accent3);}
         <div class="field"><label>Kiwango cha Chini (Low Stock Alert)</label><input type="number" id="st_min" min="0" value="5" placeholder="5"></div>
       </div>
       <div class="field"><label>Maelezo (optional)</label><input type="text" id="st_desc" placeholder="Maelezo ya ziada"></div>
+      <div class="info-box amber" id="stEditHint" style="display:none;font-size:12px;margin-bottom:14px;">Kubadilisha <strong>Idadi</strong> hapa ni marekebisho ya hesabu (mfano baada ya kuhesabu mzigo halisi). Kuongeza <strong>mzigo mpya</strong>, tumia kitufe cha "Ongeza Stock" kwenye bidhaa.</div>
       <div class="total-box" id="stockTotalBox">
         <div class="tl">Gharama ya Jumla ya Stock</div>
         <div class="ta" id="stockTotal">TZS 0</div>
@@ -435,6 +441,31 @@ footer span{color:var(--accent3);}
       <br>
       <button type="submit" class="btn btn-primary btn-full" id="btnAddStock">Hifadhi Bidhaa</button>
       <div class="mmsg" id="stmsg"></div>
+    </form>
+  </div>
+</div>
+
+<!-- ══ RESTOCK MODAL ══ -->
+<div class="mo" id="mRestock">
+  <div class="mb wide">
+    <button class="mc" onclick="cm('mRestock')">&times;</button>
+    <div class="mh"><h3 id="rsTitle">Ongeza Stock</h3><p>Ingiza mzigo mpya wa bidhaa iliyopo. Bei ya wastani ya kununulia inahesabiwa yenyewe.</p></div>
+    <form onsubmit="return doRestock(event)">
+      <input type="hidden" id="rs_id" value="">
+      <div class="info-box amber" id="rsCurrent" style="font-size:12.5px;margin-bottom:14px;"></div>
+      <div class="frow">
+        <div class="field"><label>Idadi Inayoongezwa</label><input type="number" id="rs_qty" min="1" placeholder="0" required oninput="calcRestock()"></div>
+        <div class="field"><label>Bei ya Kununulia ya Mzigo Huu (kwa kipande)</label><input type="number" id="rs_cost" min="0" placeholder="0" required oninput="calcRestock()"></div>
+      </div>
+      <div class="field"><label>Bei Mpya ya Kuuzia (si lazima)</label><input type="number" id="rs_price" min="0" placeholder="Acha wazi ibaki ile ile"></div>
+      <div class="total-box">
+        <div class="tl">Baada ya Kuongeza</div>
+        <div class="ta" id="rsAfter">Idadi mpya: 0</div>
+        <div class="ts" id="rsAfterSub"></div>
+      </div>
+      <br>
+      <button type="submit" class="btn btn-primary btn-full" id="btnRestock">Hifadhi Mzigo</button>
+      <div class="mmsg" id="rsmsg"></div>
     </form>
   </div>
 </div>
@@ -462,9 +493,9 @@ footer span{color:var(--accent3);}
           <div class="field"><label>Mteja (optional)</label><input type="text" id="sl_cust" placeholder="Jina la mteja"></div>
         </div>
         <div class="total-box">
-          <div class="tl">Faida ya Uuzaji Huu</div>
+          <div class="tl" id="saleTl">Faida ya Uuzaji Huu</div>
           <div class="ta" id="saleProfit">TZS 0</div>
-          <div class="ts">Jumla: <span id="saleTotal">TZS 0</span></div>
+          <div class="ts" id="saleTs">Jumla: <span id="saleTotal">TZS 0</span></div>
         </div>
       </div>
       <br>
@@ -478,8 +509,9 @@ footer span{color:var(--accent3);}
 <div class="mo" id="mExp">
   <div class="mb">
     <button class="mc" onclick="cm('mExp')">&times;</button>
-    <div class="mh"><h3>Rekodi Matumizi</h3><p>Sajili gharama za duka lako.</p></div>
-    <form onsubmit="return doExpense(event)">
+    <div class="mh"><h3 id="exTitle">Rekodi Matumizi</h3><p>Sajili gharama za duka lako.</p></div>
+    <form id="expForm" onsubmit="return doExpense(event)">
+      <input type="hidden" id="ex_edit_id" value="">
       <div class="field"><label>Aina ya Matumizi</label>
         <select id="ex_cat">
           <option>Kodi ya Duka</option><option>Umeme na Maji</option>
@@ -499,8 +531,9 @@ footer span{color:var(--accent3);}
 <div class="mo" id="mDebt">
   <div class="mb">
     <button class="mc" onclick="cm('mDebt')">&times;</button>
-    <div class="mh"><h3>Sajili Deni la Mteja</h3><p>Rekodi deni ulilompa mteja.</p></div>
+    <div class="mh"><h3 id="dtTitle">Sajili Deni la Mteja</h3><p>Rekodi deni ulilompa mteja.</p></div>
     <form id="debtForm" onsubmit="return doDebt(event)">
+      <input type="hidden" id="dt_edit_id" value="">
       <div class="field"><label>Jina la Mteja</label><input type="text" id="dt_cust" placeholder="Jina la mteja" required></div>
       <div class="field"><label>Namba ya Simu</label><input type="tel" id="dt_phone" placeholder="+255 6XX XXX XXX"></div>
       <div class="field"><label>Maelezo / Bidhaa</label><input type="text" id="dt_desc" placeholder="Mfano: chaja 2, spika 1"></div>
@@ -508,6 +541,101 @@ footer span{color:var(--accent3);}
       <div class="field"><label>Tarehe</label><input type="date" id="dt_date" required></div>
       <button type="submit" class="btn btn-primary btn-full" id="btnDebt">Hifadhi Deni</button>
       <div class="mmsg" id="dtmsg"></div>
+    </form>
+  </div>
+</div>
+
+<!-- ══ AKAUNTI YA KINA ══ -->
+<div class="mo" id="mAdv">
+  <div class="mb wide">
+    <button class="mc" onclick="cm('mAdv')">&times;</button>
+    <div class="mh"><h3>Akaunti ya Kina</h3><p>Kwa wenye maduka yanayotumia wafanyakazi. Mmiliki anaona kila kitu; wafanyakazi wanaingia kwa code. Duka la kwanza ni BURE.</p></div>
+    <div class="rpt-filters" style="margin-bottom:14px;">
+      <button type="button" class="rf-btn active" id="advTabReg" onclick="advMode('reg')">Jisajili</button>
+      <button type="button" class="rf-btn" id="advTabOwn" onclick="advMode('own')">Ingia Mmiliki</button>
+      <button type="button" class="rf-btn" id="advTabStf" onclick="advMode('stf')">Ingia Mfanyakazi</button>
+    </div>
+    <form id="advReg" onsubmit="return doAdvSignup(event)">
+      <div class="frow">
+        <div class="field"><label>Jina la Kwanza</label><input type="text" id="a_fn" required></div>
+        <div class="field"><label>Jina la Mwisho</label><input type="text" id="a_ln" required></div>
+      </div>
+      <div class="field"><label>Jina la Duka</label><input type="text" id="a_sh" placeholder="Mfano: Duka la Mama Neema" required></div>
+      <div class="field"><label>Mahali pa Duka</label><input type="text" id="a_loc" placeholder="Mfano: Iringa Mjini"></div>
+      <div class="frow">
+        <div class="field"><label>Barua Pepe</label><input type="email" id="a_em" placeholder="wewe@gmail.com" required autocomplete="email"></div>
+        <div class="field"><label>Namba ya Simu</label><input type="tel" id="a_ph" placeholder="+255 6XX XXX XXX" required></div>
+      </div>
+      <div class="frow">
+        <div class="field"><label>Password</label><input type="password" id="a_pw" placeholder="min 6 herufi" minlength="6" required></div>
+        <div class="field"><label>Rudia Password</label><input type="password" id="a_pw2" placeholder="rudia" minlength="6" required></div>
+      </div>
+      <button type="submit" class="btn btn-primary btn-full" id="btnAdvReg">Fungua Akaunti ya Kina</button>
+      <div class="mmsg" id="amsgReg"></div>
+    </form>
+    <form id="advOwn" style="display:none;" onsubmit="return doAdvOwnerLogin(event)">
+      <div class="field"><label>Barua Pepe</label><input type="email" id="ao_em" placeholder="wewe@gmail.com" required autocomplete="email"></div>
+      <div class="field"><label>Password</label><input type="password" id="ao_pw" required autocomplete="current-password"></div>
+      <button type="submit" class="btn btn-primary btn-full" id="btnAdvOwn">Ingia kama Mmiliki</button>
+      <div class="mmsg" id="amsgOwn"></div>
+      <div class="mfoot" style="margin-top:10px;"><a onclick="cm('mAdv');om('mReset')">Umesahau password?</a></div>
+    </form>
+    <form id="advStf" style="display:none;" onsubmit="return doStaffLogin(event)">
+      <div class="field"><label>Code ya Mfanyakazi</label><input type="text" id="as_code" placeholder="Mfano: K7M2QX-R4T9B" autocomplete="off" autocapitalize="characters" required></div>
+      <p style="font-size:12px;color:var(--ink3);margin:-4px 0 12px;line-height:1.6;">Code unapewa na boss au manager wa duka lako.</p>
+      <button type="submit" class="btn btn-primary btn-full" id="btnAdvStf">Ingia kama Mfanyakazi</button>
+      <div class="mmsg" id="amsgStf"></div>
+    </form>
+  </div>
+</div>
+
+<!-- ══ OMBI LA DUKA JIPYA (mmiliki) ══ -->
+<div class="mo" id="mNewShop">
+  <div class="mb">
+    <button class="mc" onclick="cm('mNewShop')">&times;</button>
+    <div class="mh"><h3>Ombi la Duka Jipya</h3><p>Duka la kwanza ni bure. Maduka ya ziada yanahitaji ruhusa ya admin — ombi lako litatumwa kwake.</p></div>
+    <form id="nsForm" onsubmit="return doNewShop(event)">
+      <div class="field"><label>Jina la Duka</label><input type="text" id="ns_name" required></div>
+      <div class="field"><label>Mahali pa Duka</label><input type="text" id="ns_loc"></div>
+      <button type="submit" class="btn btn-primary btn-full" id="btnNewShop">Tuma Ombi</button>
+      <div class="mmsg" id="nsmsg"></div>
+    </form>
+  </div>
+</div>
+
+<!-- ══ ONGEZA MFANYAKAZI ══ -->
+<div class="mo" id="mStaff">
+  <div class="mb">
+    <button class="mc" onclick="cm('mStaff')">&times;</button>
+    <div class="mh"><h3>Ongeza Mfanyakazi</h3><p>Utapewa code ya kumpa mfanyakazi aingie kwenye duka hili.</p></div>
+    <form id="stForm" onsubmit="return doAddStaff(event)">
+      <div class="field"><label>Jina la Mfanyakazi</label><input type="text" id="sf_name" required></div>
+      <div class="field"><label>Namba ya Simu (si lazima)</label><input type="tel" id="sf_phone" placeholder="+255 6XX XXX XXX"></div>
+      <button type="submit" class="btn btn-primary btn-full" id="btnStaff">Tengeneza Code</button>
+      <div class="mmsg" id="stfmsg"></div>
+    </form>
+  </div>
+</div>
+
+<!-- ══ HARIRI MAUZO (mmiliki) ══ -->
+<div class="mo" id="mSaleEdit">
+  <div class="mb">
+    <button class="mc" onclick="cm('mSaleEdit')">&times;</button>
+    <div class="mh"><h3 id="seTitle">Hariri Mauzo</h3><p>Idadi ikibadilika, stock inarekebishwa yenyewe. Bidhaa haibadiliki hapa — ukitaka bidhaa tofauti, futa mauzo haya kisha urekodi upya.</p></div>
+    <form onsubmit="return doEditSale(event)">
+      <input type="hidden" id="se_id" value="">
+      <div class="frow">
+        <div class="field"><label>Idadi (Qty)</label><input type="number" id="se_qty" min="1" required></div>
+        <div class="field"><label>Bei ya Kuuzia (kwa kipande)</label><input type="number" id="se_price" min="0" required></div>
+      </div>
+      <div class="frow">
+        <div class="field"><label>Njia ya Malipo</label>
+          <select id="se_pay"><option>Cash</option><option>M-Pesa</option><option>Tigo Pesa</option><option>Airtel Money</option><option>Halopesa</option><option>Bank Transfer</option></select></div>
+        <div class="field"><label>Mteja (si lazima)</label><input type="text" id="se_cust"></div>
+      </div>
+      <div class="field"><label>Tarehe</label><input type="date" id="se_date" required></div>
+      <button type="submit" class="btn btn-primary btn-full" id="btnSaleEdit">Hifadhi Mabadiliko</button>
+      <div class="mmsg" id="semsg"></div>
     </form>
   </div>
 </div>
@@ -557,7 +685,7 @@ const SS = {
 // ════════════════════════════════════════════════
 // HELPERS
 // ════════════════════════════════════════════════
-const tzs  = n  => 'TZS ' + Number(n||0).toLocaleString();
+const tzs  = n  => 'TZS ' + Math.round(Number(n||0)).toLocaleString();
 const today = () => new Date().toISOString().split('T')[0];
 const addDays = (dateStr, days) => { const d = dateStr ? new Date(dateStr) : new Date(); d.setDate(d.getDate()+days); return d.toISOString().split('T')[0]; };
 const daysLeft = (dateStr) => { if(!dateStr) return -999; const d1=new Date(today()), d2=new Date(dateStr); return Math.ceil((d2-d1)/86400000); };
@@ -685,6 +813,316 @@ function lsSave(k,v){ localStorage.setItem('mz_'+k,JSON.stringify(v)); }
 function lsUpsert(k,item){ const list=lsGet(k,[]); const i=list.findIndex(x=>x.id===item.id); if(i>=0)list[i]=item; else list.unshift(item); lsSave(k,list); }
 
 // ════════════════════════════════════════════════
+// STOCK-SAFE OPERATIONS
+// Kila badiliko la idadi ya stock hufanyika pamoja na rekodi yake (mauzo/historia)
+// ndani ya "transaction" — zote zinaingia, au hakuna kinachoingia. Idadi
+// husomwa upya kutoka kwenye database wakati wa kuhifadhi, si kutoka kwenye simu.
+// ════════════════════════════════════════════════
+const r2 = n => Math.round(Number(n||0)*100)/100;
+function stockErr(code, extra){ const e = new Error(code); e.code = code; e.extra = extra; return e; }
+function stockErrMsg(err){
+  switch(err && err.code){
+    case 'LOW_STOCK': return 'Stock iliyopo sasa ni '+err.extra+' tu. Imebadilika — huenda kifaa kingine kimeuza. Funga fomu hii kisha ujaribu tena.';
+    case 'NO_PRODUCT': return 'Bidhaa hii haipo tena stokuni.';
+    case 'NEGATIVE': return 'Idadi haiwezi kuwa chini ya sifuri (stock iliyopo sasa: '+err.extra+').';
+    case 'ALREADY_REFUNDED': return 'Mauzo haya tayari yamerejeshwa.';
+    case 'NO_SALE': return 'Rekodi ya mauzo haipo tena.';
+    case 'REFUNDED_EDIT': return 'Mauzo yaliyorejeshwa hayawezi kuhaririwa.';
+    case 'NO_DEBT': return 'Deni hili halipo tena.';
+    case 'CODE_FAIL': return 'Imeshindikana kutengeneza code. Jaribu tena.';
+    default: return 'Imeshindikana kuhifadhi. Angalia mtandao kisha jaribu tena.';
+  }
+}
+function stockLogEntry(p, type, qty, unitCost, balance, note){
+  return { productId:p.id, productName:p.name, type, qty, unitCost:Number(unitCost||0), balance, date:today(), note:note||'' };
+}
+
+async function dbSell(shopId, productId, qty, price, meta){
+  if(window._offline){
+    const list = lsGet(`${shopId}_stock`,[]); const it = list.find(x=>x.id===productId);
+    if(!it) throw stockErr('NO_PRODUCT');
+    const cur = Number(it.qty||0);
+    if(cur < qty) throw stockErr('LOW_STOCK', cur);
+    const cost = Number(it.cost||0);
+    it.qty = cur - qty; lsSave(`${shopId}_stock`, list);
+    const sale = { id:uid(), product:it.name, productId, qty, price, cost, total:r2(qty*price), profit:r2(qty*(price-cost)), ...meta };
+    lsUpsert(`${shopId}_sales`, sale);
+    lsUpsert(`${shopId}_stockLog`, { id:uid(), ...stockLogEntry(it,'mauzo',-qty,cost,it.qty) });
+    return sale;
+  }
+  const {doc,collection,runTransaction,serverTimestamp} = window._fb;
+  const db = window._db;
+  const pRef = doc(db,'shops',shopId,'stock',productId);
+  const sRef = doc(collection(db,'shops',shopId,'sales'));
+  const lRef = doc(collection(db,'shops',shopId,'stockLog'));
+  return await runTransaction(db, async (tx)=>{
+    const snap = await tx.get(pRef);
+    if(!snap.exists()) throw stockErr('NO_PRODUCT');
+    const p = { id:productId, ...snap.data() };
+    const cur = Number(p.qty||0);
+    if(cur < qty) throw stockErr('LOW_STOCK', cur);
+    const cost = Number(p.cost||0);
+    const after = cur - qty;
+    const sale = { product:p.name, productId, qty, price, cost, total:r2(qty*price), profit:r2(qty*(price-cost)), ...meta };
+    tx.update(pRef, { qty:after });
+    tx.set(sRef, { ...sale, createdAt:serverTimestamp() });
+    tx.set(lRef, { ...stockLogEntry(p,'mauzo',-qty,cost,after), createdAt:serverTimestamp() });
+    return sale;
+  });
+}
+
+// mode: 'refund' (rekodi inabaki, imewekwa alama) au 'delete' (rekodi inafutwa)
+async function dbReverseSale(shopId, saleId, mode){
+  if(window._offline){
+    const sales = lsGet(`${shopId}_sales`,[]); const sale = sales.find(x=>x.id===saleId);
+    if(!sale) throw stockErr('NO_SALE');
+    if(mode==='refund' && sale.refunded) throw stockErr('ALREADY_REFUNDED');
+    if(!sale.refunded){
+      const list = lsGet(`${shopId}_stock`,[]); const it = list.find(x=>x.id===sale.productId);
+      if(it){ it.qty = Number(it.qty||0)+Number(sale.qty||0); lsSave(`${shopId}_stock`, list);
+        lsUpsert(`${shopId}_stockLog`, { id:uid(), ...stockLogEntry(it, mode==='refund'?'rejesha':'futa-mauzo', Number(sale.qty||0), sale.cost, it.qty) }); }
+    }
+    if(mode==='refund'){ sale.refunded = true; lsSave(`${shopId}_sales`, sales); }
+    else { lsSave(`${shopId}_sales`, sales.filter(x=>x.id!==saleId)); }
+    return;
+  }
+  const {doc,collection,runTransaction,serverTimestamp} = window._fb;
+  const db = window._db;
+  const sRef = doc(db,'shops',shopId,'sales',saleId);
+  await runTransaction(db, async (tx)=>{
+    const sSnap = await tx.get(sRef);
+    if(!sSnap.exists()) throw stockErr('NO_SALE');
+    const sale = sSnap.data();
+    if(mode==='refund' && sale.refunded) throw stockErr('ALREADY_REFUNDED');
+    // mauzo yaliyokwisha rejeshwa tayari yalirudisha stock — usirudishe mara ya pili
+    let pRef=null, pSnap=null;
+    if(!sale.refunded && sale.productId){ pRef = doc(db,'shops',shopId,'stock',sale.productId); pSnap = await tx.get(pRef); }
+    if(pSnap && pSnap.exists()){
+      const p = { id:sale.productId, ...pSnap.data() };
+      const after = Number(p.qty||0) + Number(sale.qty||0);
+      tx.update(pRef, { qty:after });
+      tx.set(doc(collection(db,'shops',shopId,'stockLog')), { ...stockLogEntry(p, mode==='refund'?'rejesha':'futa-mauzo', Number(sale.qty||0), sale.cost, after), createdAt:serverTimestamp() });
+    }
+    if(mode==='refund') tx.update(sRef, { refunded:true, refundedAt:today() });
+    else tx.delete(sRef);
+  });
+}
+
+// Bidhaa mpya + rekodi ya hesabu ya mwanzo
+async function dbAddProduct(shopId, item){
+  if(window._offline){
+    const p = { id:uid(), ...item }; lsUpsert(`${shopId}_stock`, p);
+    lsUpsert(`${shopId}_stockLog`, { id:uid(), ...stockLogEntry(p,'ufunguzi',Number(p.qty||0),p.cost,Number(p.qty||0)) });
+    return p.id;
+  }
+  const {doc,collection,runTransaction,serverTimestamp} = window._fb;
+  const db = window._db;
+  const pRef = doc(collection(db,'shops',shopId,'stock'));
+  const lRef = doc(collection(db,'shops',shopId,'stockLog'));
+  await runTransaction(db, async (tx)=>{
+    tx.set(pRef, { ...item, createdAt:serverTimestamp() });
+    tx.set(lRef, { ...stockLogEntry({id:pRef.id, name:item.name},'ufunguzi',Number(item.qty||0),item.cost,Number(item.qty||0)), createdAt:serverTimestamp() });
+  });
+  return pRef.id;
+}
+
+// Mzigo mpya: idadi inaongezwa juu ya iliyopo, na bei ya kununulia inakuwa WASTANI
+// wa mzigo wa zamani na mpya — ili thamani ya stock isipotoshwe.
+async function dbRestock(shopId, productId, addQty, unitCost, newPrice){
+  const calc = (cur, oldCost)=>{
+    const base = Math.max(0, cur);
+    const newQty = cur + addQty;
+    const newCost = (base+addQty)>0 ? r2((base*oldCost + addQty*unitCost)/(base+addQty)) : unitCost;
+    return { newQty, newCost };
+  };
+  if(window._offline){
+    const list = lsGet(`${shopId}_stock`,[]); const it = list.find(x=>x.id===productId);
+    if(!it) throw stockErr('NO_PRODUCT');
+    const { newQty, newCost } = calc(Number(it.qty||0), Number(it.cost||0));
+    it.qty = newQty; it.cost = newCost; if(newPrice>0) it.price = newPrice;
+    lsSave(`${shopId}_stock`, list);
+    lsUpsert(`${shopId}_stockLog`, { id:uid(), ...stockLogEntry(it,'ongezeko',addQty,unitCost,newQty) });
+    return { newQty, newCost };
+  }
+  const {doc,collection,runTransaction,serverTimestamp} = window._fb;
+  const db = window._db;
+  const pRef = doc(db,'shops',shopId,'stock',productId);
+  const lRef = doc(collection(db,'shops',shopId,'stockLog'));
+  return await runTransaction(db, async (tx)=>{
+    const snap = await tx.get(pRef);
+    if(!snap.exists()) throw stockErr('NO_PRODUCT');
+    const p = { id:productId, ...snap.data() };
+    const { newQty, newCost } = calc(Number(p.qty||0), Number(p.cost||0));
+    const patch = { qty:newQty, cost:newCost };
+    if(newPrice>0) patch.price = newPrice;
+    tx.update(pRef, patch);
+    tx.set(lRef, { ...stockLogEntry(p,'ongezeko',addQty,unitCost,newQty), createdAt:serverTimestamp() });
+    return { newQty, newCost };
+  });
+}
+
+// Kuhariri bidhaa. Mabadiliko ya idadi yanatumwa kama "tofauti" (delta) juu ya idadi
+// halisi ya sasa, si kuandika idadi mpya moja kwa moja — na yanaingia kwenye historia.
+async function dbEditProduct(shopId, productId, fields, qtyDelta, note){
+  if(window._offline){
+    const list = lsGet(`${shopId}_stock`,[]); const it = list.find(x=>x.id===productId);
+    if(!it) throw stockErr('NO_PRODUCT');
+    const cur = Number(it.qty||0), after = cur + qtyDelta;
+    if(after < 0) throw stockErr('NEGATIVE', cur);
+    Object.assign(it, fields, { qty:after }); lsSave(`${shopId}_stock`, list);
+    if(qtyDelta!==0) lsUpsert(`${shopId}_stockLog`, { id:uid(), ...stockLogEntry(it,'marekebisho',qtyDelta,fields.cost,after,note) });
+    return after;
+  }
+  const {doc,collection,runTransaction,serverTimestamp} = window._fb;
+  const db = window._db;
+  const pRef = doc(db,'shops',shopId,'stock',productId);
+  const lRef = doc(collection(db,'shops',shopId,'stockLog'));
+  return await runTransaction(db, async (tx)=>{
+    const snap = await tx.get(pRef);
+    if(!snap.exists()) throw stockErr('NO_PRODUCT');
+    const p = { id:productId, ...snap.data() };
+    const cur = Number(p.qty||0), after = cur + qtyDelta;
+    if(after < 0) throw stockErr('NEGATIVE', cur);
+    tx.update(pRef, { ...fields, qty:after });
+    if(qtyDelta!==0) tx.set(lRef, { ...stockLogEntry({id:productId,name:fields.name||p.name},'marekebisho',qtyDelta,fields.cost,after,note), createdAt:serverTimestamp() });
+    return after;
+  });
+}
+
+// ════════════════════════════════════════════════
+// AKAUNTI YA KINA (Advanced): mmiliki + wafanyakazi
+// Akaunti za kawaida HAZIGUSWI. Zinatumia collection ile ile ya /shops:
+//   type:'owner' → akaunti ya mmiliki (email + password)
+//   type:'ashop' → duka la mmiliki (ownerId). id yake ni code fupi ya herufi 6
+//   /shops/{shopId}/staff/{staffId} → mfanyakazi; code yake = shopId + '-' + staffId
+// Akaunti ya kawaida haina "type", kwa hiyo orodha za admin za kawaida hazibadiliki.
+// ════════════════════════════════════════════════
+let ROLE = 'simple', VIEWER = '';          // 'simple' | 'owner' | 'staff'
+const isStaff = () => ROLE==='staff';
+const isOwner = () => ROLE==='owner';
+const isAdv = () => ROLE!=='simple';
+const canSeeMoney = () => ROLE!=='staff';      // bei ya kununulia, faida, thamani ya stock
+const canManage = () => ROLE!=='staff';        // stock, kurejesha/kufuta mauzo, kufuta madeni
+const canEditRecords = () => ROLE==='owner';   // kuhariri mauzo/matumizi/madeni (mmiliki wa akaunti ya kina tu)
+const NO_PERM = 'Huna ruhusa ya kubadilisha. Wasiliana na boss au manager wa duka.';
+function denyEdit(){ toast(NO_PERM,'e'); }
+function needManage(){ if(canManage()) return true; denyEdit(); return false; }
+function needEditRecords(){ if(canEditRecords()) return true; denyEdit(); return false; }
+const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';   // bila I, L, O, 0, 1 (zinachanganya)
+function genCode(n){
+  let out='';
+  const buf = (typeof crypto!=='undefined' && crypto.getRandomValues) ? crypto.getRandomValues(new Uint8Array(n)) : null;
+  for(let i=0;i<n;i++){ const r = buf ? buf[i] : Math.floor(Math.random()*256); out += CODE_CHARS[r % CODE_CHARS.length]; }
+  return out;
+}
+function parseStaffCode(raw){
+  const c = String(raw||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if(c.length!==11) return null;
+  return { shopId:c.slice(0,6), staffId:c.slice(6) };
+}
+
+async function dbGetDoc(shopId, coll, docId){
+  if(window._offline) return lsGet(`${shopId}_${coll}`,[]).find(x=>x.id===docId)||null;
+  const {doc,getDoc} = window._fb;
+  const d = await getDoc(doc(window._db,'shops',shopId,coll,docId));
+  return d.exists() ? {...d.data(), id:d.id} : null;
+}
+async function dbSetDoc(shopId, coll, docId, data){
+  if(window._offline){ lsUpsert(`${shopId}_${coll}`, {...data, id:docId}); return; }
+  const {doc,setDoc,serverTimestamp} = window._fb;
+  await setDoc(doc(window._db,'shops',shopId,coll,docId), {...data, createdAt:serverTimestamp()});
+}
+async function uniqueShopCode(){
+  for(let i=0;i<10;i++){ const c=genCode(6); if(!(await dbGetShop(c))) return c; }
+  throw stockErr('CODE_FAIL');
+}
+async function uniqueStaffCode(shopId){
+  for(let i=0;i<10;i++){ const c=genCode(5); if(!(await dbGetDoc(shopId,'staff',c))) return c; }
+  throw stockErr('CODE_FAIL');
+}
+// Mmiliki na duka lake la kwanza vinaundwa pamoja — vyote viwili au hakuna
+async function dbCreateOwnerWithShop(owner, shop){
+  if(window._offline){ await dbSaveShop(owner); await dbSaveShop(shop); return; }
+  const {doc,runTransaction} = window._fb; const db = window._db;
+  const oRef = doc(db,'shops',owner.id), sRef = doc(db,'shops',shop.id);
+  await runTransaction(db, async (tx)=>{
+    const ex = await tx.get(sRef);
+    if(ex.exists()) throw stockErr('CODE_FAIL');
+    tx.set(oRef, owner); tx.set(sRef, shop);
+  });
+}
+
+// Kuhariri mauzo: idadi ikibadilika, stock inarekebishwa kwa tofauti hiyo na historia inaandikwa.
+// Cost ya wakati wa kuuza inatumika (haibadiliki), kwa hiyo faida inabaki sahihi.
+async function dbEditSale(shopId, saleId, patch){
+  const unitCostOf = sale => (sale.cost!=null) ? Number(sale.cost)
+    : (Number(sale.qty)>0 ? Number(sale.price||0) - Number(sale.profit||0)/Number(sale.qty) : 0);
+  const build = (sale, cost) => ({
+    qty:patch.qty, price:patch.price, cost, total:r2(patch.qty*patch.price), profit:r2(patch.qty*(patch.price-cost)),
+    pay:patch.pay, customer:patch.customer, date:patch.date, editedAt:today(), editedBy:VIEWER||''
+  });
+  if(window._offline){
+    const sales = lsGet(`${shopId}_sales`,[]); const sale = sales.find(x=>x.id===saleId);
+    if(!sale) throw stockErr('NO_SALE');
+    if(sale.refunded) throw stockErr('REFUNDED_EDIT');
+    const delta = patch.qty - Number(sale.qty||0);
+    if(delta!==0){
+      const list = lsGet(`${shopId}_stock`,[]); const it = list.find(x=>x.id===sale.productId);
+      if(!it) throw stockErr('NO_PRODUCT');
+      const cur = Number(it.qty||0); if(cur-delta<0) throw stockErr('LOW_STOCK',cur);
+      it.qty = cur-delta; lsSave(`${shopId}_stock`, list);
+      lsUpsert(`${shopId}_stockLog`, { id:uid(), ...stockLogEntry(it,'marekebisho-mauzo',-delta,sale.cost,it.qty) });
+    }
+    Object.assign(sale, build(sale, unitCostOf(sale))); lsSave(`${shopId}_sales`, sales);
+    return;
+  }
+  const {doc,collection,runTransaction,serverTimestamp} = window._fb; const db = window._db;
+  const sRef = doc(db,'shops',shopId,'sales',saleId);
+  await runTransaction(db, async (tx)=>{
+    const sSnap = await tx.get(sRef);
+    if(!sSnap.exists()) throw stockErr('NO_SALE');
+    const sale = sSnap.data();
+    if(sale.refunded) throw stockErr('REFUNDED_EDIT');
+    const delta = patch.qty - Number(sale.qty||0);
+    let pRef=null, p=null, cur=0;
+    if(delta!==0){
+      if(!sale.productId) throw stockErr('NO_PRODUCT');
+      pRef = doc(db,'shops',shopId,'stock',sale.productId);
+      const pSnap = await tx.get(pRef);
+      if(!pSnap.exists()) throw stockErr('NO_PRODUCT');
+      p = { id:sale.productId, ...pSnap.data() }; cur = Number(p.qty||0);
+      if(cur-delta<0) throw stockErr('LOW_STOCK',cur);
+    }
+    if(delta!==0){
+      tx.update(pRef, { qty:cur-delta });
+      tx.set(doc(collection(db,'shops',shopId,'stockLog')), { ...stockLogEntry(p,'marekebisho-mauzo',-delta,sale.cost,cur-delta), createdAt:serverTimestamp() });
+    }
+    tx.update(sRef, build(sale, unitCostOf(sale)));
+  });
+}
+
+// Kulipa deni: ongeza juu ya kilicholipwa SASA hivi kwenye database (si kilichokuwa kwenye simu)
+async function dbPayDebt(shopId, debtId, amt){
+  if(window._offline){
+    const list = lsGet(`${shopId}_debts`,[]); const d = list.find(x=>x.id===debtId);
+    if(!d) throw stockErr('NO_DEBT');
+    d.paid = Math.min(Number(d.paid||0)+amt, Number(d.amount||0)); lsSave(`${shopId}_debts`, list); return d.paid;
+  }
+  const {doc,runTransaction} = window._fb; const db = window._db;
+  const ref = doc(db,'shops',shopId,'debts',debtId);
+  return await runTransaction(db, async (tx)=>{
+    const snap = await tx.get(ref);
+    if(!snap.exists()) throw stockErr('NO_DEBT');
+    const d = snap.data();
+    const np = Math.min(Number(d.paid||0)+amt, Number(d.amount||0));
+    tx.update(ref, { paid:np, lastPaymentAt:today() });
+    return np;
+  });
+}
+
+// ════════════════════════════════════════════════
 // APP STATE
 // ════════════════════════════════════════════════
 let CURRENT_RPT = 'day';
@@ -713,8 +1151,11 @@ syncThemeIcon();
 async function renderApp(){
   const s = SS.get();
   renderNav(s);
+  ROLE = 'simple'; VIEWER = '';
   if(!s){ renderLanding(); return; }
   if(s.role === 'admin'){ await renderAdmin(); return; }
+  if(s.role === 'owner'){ await renderOwnerFlow(s); return; }
+  if(s.role === 'staff'){ await renderStaffFlow(s); return; }
   const shop = await dbGetShop(s.id);
   if(!shop){ SS.clear(); renderApp(); return; }
   SS.set({...s, status:shop.status, shopName:shop.shopName, firstName:shop.firstName});
@@ -731,8 +1172,8 @@ function renderNav(s){
     el.innerHTML = `<button class="btn btn-ghost btn-sm" onclick="om('mLogin')">Ingia</button><button class="btn btn-primary btn-sm" onclick="om('mSignup')">Sajili Duka</button>`;
     return;
   }
-  const name = s.role==='admin' ? 'Admin' : (s.shopName || s.firstName || 'Duka');
-  el.innerHTML = `<div class="nav-chip"><span class="chip-dot g"></span>${name}</div><button class="btn btn-ghost btn-sm" onclick="doLogout()">Toka</button>`;
+  const name = s.role==='admin' ? 'Admin' : s.role==='staff' ? ((s.name||'')+(s.shopName?' · '+s.shopName:'')) : (s.shopName || s.firstName || 'Duka');
+  el.innerHTML = `<div class="nav-chip"><span class="chip-dot g"></span>${esc(name)}</div><button class="btn btn-ghost btn-sm" onclick="doLogout()">Toka</button>`;
 }
 
 function doLogout(){ SS.clear(); renderApp(); toast('Umetoka','s'); }
@@ -804,10 +1245,193 @@ function renderSuspended(shop){
 }
 
 // ════════════════════════════════════════════════
+// AKAUNTI YA KINA — mtiririko wa mmiliki na mfanyakazi
+// ════════════════════════════════════════════════
+function renderAdvBlocked(title, msgHtml){
+  document.getElementById('appMain').innerHTML = `
+  <div class="center-pg"><div class="center-box">
+    <div class="ci" style="background:rgba(148,163,184,0.15);font-size:30px;">⛔</div>
+    <h2>${title}</h2>
+    <p>${msgHtml}</p>
+    <div class="act-btns" style="justify-content:center;margin-top:6px;">
+      <a href="https://wa.me/255612905872" target="_blank" class="btn btn-green btn-sm">💬 Wasiliana WhatsApp</a>
+      <button class="btn btn-ghost btn-sm" onclick="doLogout()">Toka</button>
+    </div>
+  </div></div>`;
+}
+
+async function renderOwnerFlow(s){
+  const owner = await dbGetShop(s.id);
+  if(!owner || owner.type!=='owner'){ SS.clear(); await renderApp(); return; }
+  if(owner.status==='suspended'){
+    renderAdvBlocked('Akaunti Imesimamishwa','Habari '+esc(owner.firstName)+', akaunti yako ya kina imesimamishwa na admin. Data zako zote zipo salama. Wasiliana na admin kurejeshewa.');
+    return;
+  }
+  window._OWNER = owner;
+  if(!s.shopId){ await renderOwnerHome(owner); return; }
+  const shop = await dbGetShop(s.shopId);
+  if(!shop || shop.type!=='ashop' || shop.ownerId!==owner.id || (shop.status!=='approved' && shop.status!=='suspended')){
+    SS.set({...s, shopId:null}); await renderOwnerHome(owner); return;
+  }
+  ROLE = 'owner'; VIEWER = owner.firstName;
+  await renderShopDashboard(shop);
+}
+
+async function renderStaffFlow(s){
+  const shop = await dbGetShop(s.shopId);
+  const st = (shop && shop.type==='ashop') ? await dbGetDoc(s.shopId,'staff',s.staffId) : null;
+  if(!shop || !st){ SS.clear(); toast('Code yako haipo tena. Wasiliana na boss au manager.','e'); await renderApp(); return; }
+  const owner = await dbGetShop(shop.ownerId);
+  let why = '';
+  if(st.status==='suspended') why = 'Akaunti yako imesimamishwa na mmiliki wa duka.';
+  else if(!owner || owner.status!=='approved') why = 'Akaunti ya duka hili imesimamishwa kwa muda.';
+  else if(shop.status!=='approved') why = 'Duka hili limesimamishwa kwa muda na mmiliki.';
+  if(why){ renderAdvBlocked('Huwezi Kuingia Sasa', esc(why)+' Wasiliana na boss au manager wa duka.'); return; }
+  ROLE = 'staff'; VIEWER = st.name;
+  await renderShopDashboard(shop);
+}
+
+async function renderOwnerHome(owner){
+  const all = await dbShops();
+  const mine = all.filter(x=>x.type==='ashop' && x.ownerId===owner.id);
+  window._MYSHOPS = mine;
+  const badge = st => st==='approved' ? '<span class="badge approved">Linafanya kazi</span>'
+    : st==='suspended' ? '<span class="badge" style="background:rgba(148,163,184,0.18);color:#94a3b8;">Limesimamishwa</span>'
+    : st==='pending' ? '<span class="badge" style="background:rgba(251,191,36,0.18);color:#fbbf24;">Linasubiri idhini ya admin</span>'
+    : '<span class="badge rejected">Halifanyi kazi</span>';
+  const cards = mine.length ? mine.map(sh=>`
+    <div class="tbl-card" style="padding:16px 18px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+      <div>
+        <div style="font-size:17px;font-weight:700;">${esc(sh.shopName)}</div>
+        <div style="font-size:12.5px;color:var(--ink3);margin:3px 0 8px;">${esc(sh.location||'')} · Code ya duka: <strong style="letter-spacing:1px;">${esc(sh.id)}</strong></div>
+        ${badge(sh.status)}
+      </div>
+      <div class="act-btns">
+        ${(sh.status==='approved'||sh.status==='suspended') ? `<button class="btn btn-primary btn-sm" onclick="ownerOpenShop('${sh.id}')">Fungua</button>` : ''}
+        ${sh.status==='approved' ? `<button class="btn btn-outline btn-sm" onclick="ownerToggleShop('${sh.id}','suspended')">Simamisha</button>`
+          : sh.status==='suspended' ? `<button class="btn btn-green btn-sm" onclick="ownerToggleShop('${sh.id}','approved')">Rejesha</button>` : ''}
+      </div>
+    </div>`).join('') : `<div class="tbl-card"><div class="empty">Hakuna maduka bado.</div></div>`;
+  document.getElementById('appMain').innerHTML = `
+  <div class="page wrap">
+    <div class="page-head"><div><h2>Maduka Yangu</h2><p>Habari ${esc(owner.firstName)}, chagua duka la kufungua.</p></div>
+      <button class="btn btn-outline btn-sm" onclick="openNewShop()">+ Ombi la Duka Jipya</button></div>
+    ${cards}
+    <div class="info-box amber" style="font-size:12.5px;line-height:1.7;">Duka la kwanza ni <strong>BURE</strong>. Maduka ya ziada yanahitaji ruhusa ya admin. Unaweza kuongeza wafanyakazi bila kikomo (ndani ya duka, tab ya "Wafanyakazi").</div>
+  </div>`;
+}
+function ownerOpenShop(id){ const s=SS.get(); if(!s || s.role!=='owner') return; SS.set({...s, shopId:id}); renderApp(); }
+function ownerBackToShops(){ const s=SS.get(); if(!s || s.role!=='owner') return; SS.set({...s, shopId:null}); renderApp(); }
+async function ownerToggleShop(id, to){
+  const sh = (window._MYSHOPS||[]).find(x=>x.id===id);
+  if(!sh || !window._OWNER || sh.ownerId!==window._OWNER.id) return;
+  if(to==='suspended' && !confirm('Simamisha duka "'+sh.shopName+'"? Wafanyakazi hawataweza kuingia hadi uliporejesha. Data haifutwi.')) return;
+  await dbUpdateShop(id, {status:to});
+  toast(to==='suspended' ? 'Duka limesimamishwa' : 'Duka limerejeshwa','s');
+  await renderApp();
+}
+function openNewShop(){
+  if((window._MYSHOPS||[]).some(x=>x.status==='pending')){ toast('Tayari una ombi linalosubiri idhini ya admin.','e'); return; }
+  document.getElementById('nsForm').reset();
+  const m=document.getElementById('nsmsg'); m.textContent=''; m.className='mmsg';
+  om('mNewShop');
+}
+async function doNewShop(e){
+  e.preventDefault();
+  const owner = window._OWNER; if(!owner) return false;
+  const msg=document.getElementById('nsmsg'); msg.className='mmsg'; msg.textContent='';
+  const name=document.getElementById('ns_name').value.trim(), loc=document.getElementById('ns_loc').value.trim();
+  if(!name){ msg.textContent='Weka jina la duka.'; msg.className='mmsg err'; return false; }
+  const btn=document.getElementById('btnNewShop'); btn.disabled=true;
+  try{
+    const code = await uniqueShopCode();
+    await dbSaveShop({ id:code, type:'ashop', ownerId:owner.id, shopName:name, location:loc, status:'pending', regDate:new Date().toISOString() });
+    cm('mNewShop'); toast('Ombi limetumwa kwa admin','s');
+    await renderApp();
+  }catch(err){ msg.textContent=stockErrMsg(err); msg.className='mmsg err'; }
+  finally{ btn.disabled=false; }
+  return false;
+}
+
+// ── Fomu ya Akaunti ya Kina (kusajili / kuingia) ──
+function openAdv(mode){ advMode(mode||'reg'); om('mAdv'); }
+function advMode(m){
+  [['reg','advReg','advTabReg'],['own','advOwn','advTabOwn'],['stf','advStf','advTabStf']].forEach(([k,f,t])=>{
+    document.getElementById(f).style.display = (k===m) ? 'block' : 'none';
+    document.getElementById(t).classList.toggle('active', k===m);
+  });
+}
+async function doAdvSignup(e){
+  e.preventDefault();
+  const btn=document.getElementById('btnAdvReg'), msg=document.getElementById('amsgReg'); msg.className='mmsg'; msg.textContent='';
+  const fail=t=>{ msg.textContent=t; msg.className='mmsg err'; btn.disabled=false; return false; };
+  btn.disabled=true;
+  const v = id => document.getElementById(id).value.trim();
+  const fn=v('a_fn'), ln=v('a_ln'), sh=v('a_sh'), em=v('a_em').toLowerCase(), ph=v('a_ph'), loc=v('a_loc'), pw=v('a_pw'), pw2=v('a_pw2');
+  if(pw!==pw2) return fail('Password hazifanani.');
+  if(pw.length<6) return fail('Password lazima iwe na herufi 6 au zaidi.');
+  try{
+    const all = await dbShops();
+    if(all.some(x=>x.email===em)) return fail('Email hii tayari imesajiliwa.');
+    const code = await uniqueShopCode();
+    const now = new Date().toISOString();
+    const owner = { id:uid(), type:'owner', firstName:fn, lastName:ln, email:em, phone:ph, password:pw, status:'approved', regDate:now };
+    const shop = { id:code, type:'ashop', ownerId:owner.id, shopName:sh, location:loc, status:'approved', regDate:now };
+    await dbCreateOwnerWithShop(owner, shop);
+    SS.set({ role:'owner', id:owner.id, firstName:fn, shopId:code });
+    cm('mAdv'); document.getElementById('advReg').reset();
+    toast('Karibu '+fn+' — duka lako la kwanza liko tayari','s');
+    await renderApp();
+  }catch(err){ return fail(stockErrMsg(err)); }
+  btn.disabled=false; return false;
+}
+async function doAdvOwnerLogin(e){
+  e.preventDefault();
+  const btn=document.getElementById('btnAdvOwn'), msg=document.getElementById('amsgOwn'); msg.className='mmsg'; msg.textContent='';
+  const fail=t=>{ msg.textContent=t; msg.className='mmsg err'; btn.disabled=false; return false; };
+  btn.disabled=true;
+  const em=document.getElementById('ao_em').value.trim().toLowerCase(), pw=document.getElementById('ao_pw').value.trim();
+  try{
+    const all = await dbShops();
+    const owner = all.find(x=>x.type==='owner' && x.email===em && x.password===pw);
+    if(!owner) return fail('Email au password si sahihi.');
+    if(owner.status==='suspended') return fail('Akaunti hii imesimamishwa. Wasiliana na admin.');
+    const mine = all.filter(x=>x.type==='ashop' && x.ownerId===owner.id);
+    const only = (mine.length===1 && (mine[0].status==='approved'||mine[0].status==='suspended')) ? mine[0].id : null;
+    SS.set({ role:'owner', id:owner.id, firstName:owner.firstName, shopId:only });
+    cm('mAdv'); document.getElementById('advOwn').reset();
+    toast('Karibu '+owner.firstName,'s');
+    await renderApp();
+  }catch(err){ return fail('Imeshindikana kuingia. Angalia mtandao kisha jaribu tena.'); }
+  btn.disabled=false; return false;
+}
+async function doStaffLogin(e){
+  e.preventDefault();
+  const btn=document.getElementById('btnAdvStf'), msg=document.getElementById('amsgStf'); msg.className='mmsg'; msg.textContent='';
+  const fail=t=>{ msg.textContent=t; msg.className='mmsg err'; btn.disabled=false; return false; };
+  btn.disabled=true;
+  const parsed = parseStaffCode(document.getElementById('as_code').value);
+  if(!parsed) return fail('Code si sahihi. Inapaswa kuwa herufi 11, mfano K7M2QX-R4T9B.');
+  try{
+    const shop = await dbGetShop(parsed.shopId);
+    const st = (shop && shop.type==='ashop') ? await dbGetDoc(parsed.shopId,'staff',parsed.staffId) : null;
+    if(!shop || !st) return fail('Code hii haipo. Hakikisha umeiandika sawa au muulize boss wako.');
+    SS.set({ role:'staff', shopId:parsed.shopId, staffId:parsed.staffId, name:st.name, shopName:shop.shopName });
+    cm('mAdv'); document.getElementById('advStf').reset();
+    toast('Karibu '+st.name,'s');
+    await renderApp();
+  }catch(err){ return fail('Imeshindikana kuingia. Angalia mtandao kisha jaribu tena.'); }
+  btn.disabled=false; return false;
+}
+
+// ════════════════════════════════════════════════
 // ADMIN DASHBOARD (haoni data za maduka — anaona tu majina/maombi)
 // ════════════════════════════════════════════════
 async function renderAdmin(){
-  const shops = await dbShops();
+  const everything = await dbShops();
+  const shops = everything.filter(s=>!s.type);          // akaunti za kawaida tu
+  window._ADV = { owners: everything.filter(s=>s.type==='owner'), ashops: everything.filter(s=>s.type==='ashop') };
+  const pendingReq = window._ADV.ashops.filter(s=>s.status==='pending').length;
   const pending = shops.filter(s=>s.status==='pending');
   const approved = shops.filter(s=>s.status==='approved');
   const suspended = shops.filter(s=>s.status==='suspended');
@@ -827,6 +1451,7 @@ async function renderAdmin(){
       <button class="tab" data-t="appr" onclick="adminTab('appr')">Maduka Yaliyoruhusiwa</button>
       <button class="tab" data-t="susp" onclick="adminTab('susp')">Zilizosimamishwa</button>
       <button class="tab" data-t="rej" onclick="adminTab('rej')">Yaliyokataliwa</button>
+      <button class="tab" data-t="adv" onclick="adminTab('adv')">Akaunti za Kina${pendingReq?` <span class="tab-badge">${pendingReq}</span>`:''}</button>
     </div>
     <div id="adminTabBody"></div>
   </div>`;
@@ -835,6 +1460,7 @@ async function renderAdmin(){
 
 function adminTab(t){
   document.querySelectorAll('.tabs .tab').forEach(b=>b.classList.toggle('active', b.dataset.t===t));
+  if(t==='adv'){ renderAdminAdv(); return; }
   const {pending,approved,suspended,rejected} = window._ADM;
   const body = document.getElementById('adminTabBody');
   const list = t==='pend'?pending : t==='appr'?approved : t==='susp'?suspended : rejected;
@@ -892,6 +1518,70 @@ function adminTab(t){
   body.innerHTML = `<div class="tbl-card"><div class="scroll-x"><table><thead><tr><th>Duka</th><th>Mmiliki</th><th>Email</th><th>Simu</th><th>Tarehe</th><th>Hatua</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 
+
+// ── Admin: Akaunti za Kina (haoni data za biashara — anaona wamiliki na maombi tu) ──
+function renderAdminAdv(){
+  const {owners, ashops} = window._ADV;
+  const body = document.getElementById('adminTabBody');
+  const ownerName = id => { const o = owners.find(x=>x.id===id); return o ? esc(o.firstName+' '+o.lastName) : '—'; };
+  const pend = ashops.filter(x=>x.status==='pending');
+  const pendHtml = pend.length ? `<div class="tbl-card" style="margin-bottom:14px;padding:14px 16px;">
+      <h3 style="margin:0 0 10px;font-size:15px;">Maombi ya Maduka ya Ziada</h3>
+      <div class="scroll-x"><table><thead><tr><th>Duka Lililoombwa</th><th>Mmiliki</th><th>Tarehe</th><th>Hatua</th></tr></thead><tbody>
+      ${pend.map(x=>`<tr><td><strong>${esc(x.shopName)}</strong><br><span style="color:var(--ink3);font-size:11.5px;">${esc(x.location||'')}</span></td><td>${ownerName(x.ownerId)}</td><td>${(x.regDate||'').split('T')[0]}</td>
+        <td><div class="act-btns"><button class="btn btn-green btn-xs" onclick="adminAdvApprove('${x.id}')">Kubali</button><button class="btn btn-red btn-xs" onclick="adminAdvReject('${x.id}')">Kataa</button></div></td></tr>`).join('')}
+      </tbody></table></div></div>`
+    : `<div class="tbl-card" style="margin-bottom:14px;"><div class="empty">Hakuna maombi ya maduka ya ziada.</div></div>`;
+  const ownersHtml = owners.length ? `<div class="tbl-card" style="padding:14px 16px;">
+      <h3 style="margin:0 0 10px;font-size:15px;">Wamiliki wa Akaunti za Kina</h3>
+      <div class="scroll-x"><table><thead><tr><th>Mmiliki</th><th>Simu / Email</th><th>Maduka</th><th>Hali</th><th>Hatua</th></tr></thead><tbody>
+      ${owners.map(o=>{
+        const mine = ashops.filter(x=>x.ownerId===o.id);
+        const active = mine.filter(x=>x.status==='approved'||x.status==='suspended').length;
+        const susp = o.status==='suspended';
+        return `<tr><td><strong>${esc(o.firstName+' '+o.lastName)}</strong><br><span style="color:var(--ink3);font-size:11.5px;">${(o.regDate||'').split('T')[0]}</span></td>
+          <td>${esc(o.phone||'')}<br><span style="color:var(--ink3);font-size:11.5px;">${esc(o.email)}</span></td>
+          <td>${active} / ${mine.length}</td>
+          <td>${susp ? '<span class="badge" style="background:rgba(148,163,184,0.18);color:#94a3b8;">Imesimamishwa</span>' : '<span class="badge approved">Hai</span>'}</td>
+          <td><div class="act-btns">${susp
+            ? `<button class="btn btn-green btn-xs" onclick="adminAdvToggleOwner('${o.id}','approved')">Rejesha</button>`
+            : `<button class="btn btn-outline btn-xs" onclick="adminAdvToggleOwner('${o.id}','suspended')">Simamisha</button>`}
+            <button class="btn btn-red btn-xs" onclick="adminAdvDeleteOwner('${o.id}')">Futa Kabisa</button></div></td></tr>`;
+      }).join('')}
+      </tbody></table></div></div>`
+    : `<div class="tbl-card"><div class="empty">Hakuna akaunti za kina bado.</div></div>`;
+  body.innerHTML = pendHtml + ownersHtml;
+}
+async function adminAdvApprove(id){
+  await dbUpdateShop(id, {status:'approved'});
+  toast('Duka limeruhusiwa','s'); await renderAdmin(); adminTab('adv');
+}
+async function adminAdvReject(id){
+  if(!confirm('Kataa ombi hili la duka? Ombi litafutwa.')) return;
+  await dbDeleteShop(id);
+  toast('Ombi limekataliwa','s'); await renderAdmin(); adminTab('adv');
+}
+async function adminAdvToggleOwner(id, to){
+  if(to==='suspended' && !confirm('Simamisha akaunti hii ya kina? Mmiliki na wafanyakazi wake hawataweza kuingia. Data haifutwi.')) return;
+  await dbUpdateShop(id, {status:to});
+  toast(to==='suspended' ? 'Akaunti imesimamishwa' : 'Akaunti imerejeshwa','s'); await renderAdmin(); adminTab('adv');
+}
+async function adminAdvDeleteOwner(id){
+  const o = window._ADV.owners.find(x=>x.id===id); if(!o) return;
+  const mine = window._ADV.ashops.filter(x=>x.ownerId===id);
+  if(!confirm('FUTA KABISA akaunti ya "'+o.firstName+' '+o.lastName+'" pamoja na maduka yake '+mine.length+', wafanyakazi na data zote (stock, mauzo, matumizi, madeni)? Hatua hii HAIWEZI kurudishwa.')) return;
+  if(!confirm('Uthibitisho wa mwisho: futa kila kitu cha mmiliki huyu milele?')) return;
+  for(const sh of mine){
+    for(const coll of ['stock','sales','expenses','debts','stockLog','staff']){
+      const docs = await dbGetColl(sh.id, coll);
+      for(const d of docs){ await dbDeleteDoc(sh.id, coll, d.id); }
+    }
+    await dbDeleteShop(sh.id);
+  }
+  await dbDeleteShop(id);
+  toast('Akaunti imefutwa kabisa','s'); await renderAdmin(); adminTab('adv');
+}
+
 async function adminDecide(id, status){
   const patch = {status};
   if(status==='approved'){ patch.subscriptionExpiry = addDays(null,7); patch.isTrial = true; }
@@ -923,7 +1613,7 @@ async function adminUnsuspend(id){
 async function adminDeleteShop(id, name){
   if(!confirm('UNA UHAKIKA? Hii itafuta KABISA akaunti ya "'+name+'" pamoja na stock, mauzo, matumizi na madeni yake YOTE. Hatua hii HAIWEZI kurudishwa.')) return;
   if(!confirm('Uthibitisho wa mwisho: andika/bonyeza OK kufuta "'+name+'" milele.')) return;
-  for(const coll of ['stock','sales','expenses','debts']){
+  for(const coll of ['stock','sales','expenses','debts','stockLog']){
     const docs = await dbGetColl(id, coll);
     for(const d of docs){ await dbDeleteDoc(id, coll, d.id); }
   }
@@ -942,16 +1632,22 @@ async function renderShopDashboard(shop){
   STOCK_CACHE = stock;
   window._SHOP = {shop, stock, sales, expenses, debts};
 
+  const tabDefs = [
+    ['home','🏠 Home',true], ['stock','📦 Stock',canManage()], ['sales','💰 Mauzo',true],
+    ['exp','💸 Matumizi',true], ['debts','🧾 Madeni',true], ['rpt','📊 Ripoti',true],
+    ['staff','👥 Wafanyakazi',isOwner()]
+  ];
+  const tabsHtml = tabDefs.filter(t=>t[2]).map(t=>`<button class="tab" data-t="${t[0]}" onclick="shopTab('${t[0]}')">${t[1]}</button>`).join('\n      ');
+  const back = isOwner() ? `<button class="btn btn-ghost btn-sm" onclick="ownerBackToShops()">← Maduka Yangu</button>` : '';
+  const suspBanner = (isOwner() && shop.status==='suspended') ? `<div class="info-box amber" style="margin-bottom:14px;">⛔ Duka hili limesimamishwa — wafanyakazi hawawezi kuingia. Unaweza kulirejesha kupitia "Maduka Yangu".</div>` : '';
+  const who = VIEWER || shop.firstName;
+
   document.getElementById('appMain').innerHTML = `
   <div class="page wrap">
-    <div class="page-head"><div><h2>${shop.shopName}</h2><p>Habari ${shop.firstName}, karibu kwenye dashibodi yako</p></div></div>
+    <div class="page-head"><div><h2>${esc(shop.shopName)}</h2><p>Habari ${esc(who)}, karibu kwenye dashibodi yako</p></div>${back}</div>
+    ${suspBanner}
     <div class="tabs">
-      <button class="tab" data-t="home" onclick="shopTab('home')">🏠 Home</button>
-      <button class="tab" data-t="stock" onclick="shopTab('stock')">📦 Stock</button>
-      <button class="tab" data-t="sales" onclick="shopTab('sales')">💰 Mauzo</button>
-      <button class="tab" data-t="exp" onclick="shopTab('exp')">💸 Matumizi</button>
-      <button class="tab" data-t="debts" onclick="shopTab('debts')">🧾 Madeni</button>
-      <button class="tab" data-t="rpt" onclick="shopTab('rpt')">📊 Ripoti</button>
+      ${tabsHtml}
     </div>
     <div id="shopTabBody"></div>
   </div>`;
@@ -961,19 +1657,22 @@ async function renderShopDashboard(shop){
 function shopTab(t){
   document.querySelectorAll('.tabs .tab').forEach(b=>b.classList.toggle('active', b.dataset.t===t));
   if(t==='home') return renderHomeTab();
-  if(t==='stock') return renderStockTab();
+  if(t==='stock'){ if(!needManage()) return; return renderStockTab(); }
   if(t==='sales') return renderSalesTab();
   if(t==='exp') return renderExpTab();
   if(t==='debts') return renderDebtsTab();
   if(t==='rpt') return renderRptTab();
+  if(t==='staff'){ if(!isOwner()) return denyEdit(); return renderStaffTab(); }
 }
 
 function renderHomeTab(){
   const {shop, stock, sales, debts} = window._SHOP;
+  const money = canSeeMoney();
   const todaySales = sales.filter(s=>(s.date||'')===today() && !s.refunded);
   const todayTotal = todaySales.reduce((a,s)=>a+Number(s.total||0),0);
   const todayProfit = todaySales.reduce((a,s)=>a+Number(s.profit||0),0);
-  const stockValue = stock.reduce((a,i)=>a+Number(i.qty||0)*Number(i.cost||0),0);
+  const stockValue = stock.reduce((a,i)=>a+Math.max(0,Number(i.qty||0))*Number(i.cost||0),0);
+  const stockSellValue = stock.reduce((a,i)=>a+Math.max(0,Number(i.qty||0))*Number(i.price||0),0);
   const lowStock = stock.filter(i=>Number(i.qty||0) <= Number(i.minQty||5));
   const debtOwed = debts.filter(d=>Number(d.paid||0) < Number(d.amount||0))
     .reduce((a,d)=>a+(Number(d.amount||0)-Number(d.paid||0)),0);
@@ -982,22 +1681,27 @@ function renderHomeTab(){
   const lowStockList = lowStock.length ? `
     <div class="tbl-card" style="margin-top:14px;">
       <h3 style="margin:0 0 10px;font-size:15px;">⚠️ Bidhaa Zinazokaribia Kuisha</h3>
-      <div class="scroll-x"><table><thead><tr><th>Bidhaa</th><th>Iliyopo</th><th>Kiwango cha Chini</th><th></th></tr></thead><tbody>
-        ${lowStock.map(i=>`<tr><td>${i.name}</td><td class="low-qty" style="font-weight:700;">${i.qty}</td><td>${i.minQty||5}</td><td><button class="btn btn-outline btn-xs" onclick="editStock('${i.id}')">Ongeza Stock</button></td></tr>`).join('')}
+      <div class="scroll-x"><table><thead><tr><th>Bidhaa</th><th>Iliyopo</th><th>Kiwango cha Chini</th>${money?'<th></th>':''}</tr></thead><tbody>
+        ${lowStock.map(i=>`<tr><td>${i.name}</td><td class="low-qty" style="font-weight:700;">${i.qty}</td><td>${i.minQty||5}</td>${money?`<td><button class="btn btn-green btn-xs" onclick="openRestock('${i.id}')">Ongeza Stock</button></td>`:''}</tr>`).join('')}
       </tbody></table></div>
     </div>` : '';
-  document.getElementById('shopTabBody').innerHTML = `
-    ${expiryBanner}
-    <div class="stat-grid">
-      <div class="sc purple"><div class="sc-icon purple">📦</div><div class="sc-lbl">Thamani ya Stock</div><div class="sc-num">${tzs(stockValue)}</div></div>
+  const cards = money ? `
+      <div class="sc purple"><div class="sc-icon purple">📦</div><div class="sc-lbl">Thamani ya Stock (Kununulia)</div><div class="sc-num">${tzs(stockValue)}</div></div>
+      <div class="sc purple"><div class="sc-icon purple">🏷️</div><div class="sc-lbl">Thamani ya Stock (Kuuzia)</div><div class="sc-num">${tzs(stockSellValue)}</div></div>
       <div class="sc green"><div class="sc-icon green">💰</div><div class="sc-lbl">Mauzo ya Leo</div><div class="sc-num">${tzs(todayTotal)}</div></div>
       <div class="sc blue"><div class="sc-icon blue">📈</div><div class="sc-lbl">Faida ya Leo</div><div class="sc-num">${tzs(todayProfit)}</div></div>
       <div class="sc orange"><div class="sc-icon orange">⚠️</div><div class="sc-lbl">Bidhaa Chache</div><div class="sc-num">${lowStock.length}</div></div>
-      <div class="sc red"><div class="sc-icon red">🧾</div><div class="sc-lbl">Madeni Yanayodaiwa</div><div class="sc-num">${tzs(debtOwed)}</div></div>
+      <div class="sc red"><div class="sc-icon red">🧾</div><div class="sc-lbl">Madeni Yanayodaiwa</div><div class="sc-num">${tzs(debtOwed)}</div></div>` : `
+      <div class="sc green"><div class="sc-icon green">💰</div><div class="sc-lbl">Mauzo ya Leo</div><div class="sc-num">${tzs(todayTotal)}</div></div>
+      <div class="sc orange"><div class="sc-icon orange">⚠️</div><div class="sc-lbl">Bidhaa Chache</div><div class="sc-num">${lowStock.length}</div></div>
+      <div class="sc red"><div class="sc-icon red">🧾</div><div class="sc-lbl">Madeni Yanayodaiwa</div><div class="sc-num">${tzs(debtOwed)}</div></div>`;
+  document.getElementById('shopTabBody').innerHTML = `
+    ${expiryBanner}
+    <div class="stat-grid">${cards}
     </div>
     ${lowStockList}
     <div class="act-btns" style="margin-top:16px;flex-wrap:wrap;">
-      <button class="btn btn-primary btn-sm" onclick="openAddStock()">+ Bidhaa</button>
+      ${money?`<button class="btn btn-primary btn-sm" onclick="openAddStock()">+ Bidhaa</button>`:''}
       <button class="btn btn-green btn-sm" onclick="prepSaleModal()">+ Uuzaji</button>
       <button class="btn btn-outline btn-sm" onclick="prepExpModal()">+ Matumizi</button>
       <button class="btn btn-outline btn-sm" onclick="openAddDebt()">+ Deni</button>
@@ -1018,10 +1722,27 @@ function renderStockTab(){
         <option value="priceLow" ${STOCK_SORT==='priceLow'?'selected':''}>Bei ya Chini Kwanza</option>
         <option value="priceHigh" ${STOCK_SORT==='priceHigh'?'selected':''}>Bei ya Juu Kwanza</option>
       </select>
+      <button class="btn btn-outline btn-sm" onclick="toggleStockAudit()">🔍 Ukaguzi wa Hesabu</button>
       <button class="btn btn-primary btn-sm" onclick="openAddStock()">+ Bidhaa</button>
     </div>
   </div>`;
   if(!stock.length){ body.innerHTML = head+`<div class="tbl-card"><div class="empty">Hamna bidhaa bado. Bofya "+ Bidhaa" kuanza.</div></div>`; return; }
+
+  const totalUnits = stock.reduce((a,i)=>a+Math.max(0,Number(i.qty||0)),0);
+  const costValue = stock.reduce((a,i)=>a+Math.max(0,Number(i.qty||0))*Number(i.cost||0),0);
+  const sellValue = stock.reduce((a,i)=>a+Math.max(0,Number(i.qty||0))*Number(i.price||0),0);
+  const negatives = stock.filter(i=>Number(i.qty||0)<0);
+  const box = (lbl,val,color)=>`<div style="background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:10px 12px;"><div style="font-size:11px;color:var(--ink3);margin-bottom:3px;">${lbl}</div><div style="font-size:15px;font-weight:700;color:${color||'var(--ink)'};">${val}</div></div>`;
+  const summary = `<div class="tbl-card" style="padding:14px 16px;margin-bottom:14px;">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;">
+      ${box('Aina za Bidhaa', stock.length)}
+      ${box('Jumla ya Vipande', totalUnits.toLocaleString())}
+      ${box('Thamani (Bei ya Kununua)', tzs(costValue))}
+      ${box('Thamani (Bei ya Kuuza)', tzs(sellValue))}
+      ${box('Faida Inayotarajiwa', tzs(sellValue-costValue), 'var(--green)')}
+    </div>
+    ${negatives.length ? `<div class="info-box amber" style="margin:12px 0 0;">⚠️ Bidhaa hizi zina idadi chini ya sifuri (hesabu si sahihi): <strong>${negatives.map(i=>i.name).join(', ')}</strong>. Zihariri uweke idadi halisi iliyopo.</div>` : ''}
+  </div><div id="stockAudit"></div>`;
 
   let sorted = [...stock];
   if(STOCK_SORT==='az') sorted.sort((a,b)=>a.name.localeCompare(b.name));
@@ -1037,14 +1758,17 @@ function renderStockTab(){
       <div class="sc-cat">${i.category||''}</div>
       <div class="sc-qty ${low?'low-qty':''}">${i.qty}</div>
       <div class="sc-price">Kuuzia: ${tzs(i.price)} · Kununulia: ${tzs(i.cost)}</div>
-      <div class="sc-btns"><button class="btn btn-outline btn-xs" onclick="editStock('${i.id}')">Hariri</button><button class="btn btn-red btn-xs" onclick="delStock('${i.id}')">Futa</button></div>
+      <div class="sc-price">Thamani: ${tzs(Math.max(0,Number(i.qty||0))*Number(i.cost||0))} (kununulia) · ${tzs(Math.max(0,Number(i.qty||0))*Number(i.price||0))} (kuuzia)</div>
+      <div class="sc-btns"><button class="btn btn-green btn-xs" onclick="openRestock('${i.id}')">Ongeza Stock</button><button class="btn btn-outline btn-xs" onclick="editStock('${i.id}')">Hariri</button><button class="btn btn-red btn-xs" onclick="delStock('${i.id}')">Futa</button></div>
     </div>`;
   }).join('');
-  body.innerHTML = head+`<div class="stock-grid">${cards}</div>`;
+  body.innerHTML = head+summary+`<div class="stock-grid">${cards}</div>`;
+  if(STOCK_AUDIT_OPEN) loadStockAudit();
 }
 function setStockSort(v){ STOCK_SORT = v; renderStockTab(); }
 
 async function delStock(id){
+  if(!needManage()) return;
   if(!confirm('Una uhakika unataka kufuta bidhaa hii?')) return;
   await dbDeleteDoc(window._SHOP.shop.id,'stock',id);
   toast('Bidhaa imefutwa','s');
@@ -1055,44 +1779,88 @@ let SALES_SEARCH = '';
 function renderSalesTab(){
   const {sales} = window._SHOP;
   const body = document.getElementById('shopTabBody');
+  const money = canSeeMoney(), adv = isAdv();
   const head = `<div class="tbl-head" style="margin-bottom:14px;flex-wrap:wrap;gap:10px;">
     <h3 style="margin:0;">Mauzo Yangu</h3>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-      <input type="text" id="salesSearchInp" class="search-inp" placeholder="Tafuta jina la bidhaa..." value="${SALES_SEARCH}" oninput="setSalesSearch(this.value)">
+      <input type="text" id="salesSearchInp" class="search-inp" placeholder="Tafuta jina la bidhaa..." value="${esc(SALES_SEARCH)}" oninput="setSalesSearch(this.value)">
       <button class="btn btn-green btn-sm" onclick="prepSaleModal()">+ Uuzaji</button>
     </div>
   </div>`;
   if(!sales.length){ body.innerHTML = head+`<div class="tbl-card"><div class="empty">Hamna mauzo bado.</div></div>`; return; }
   const filtered = SALES_SEARCH ? sales.filter(s=>(s.product||'').toLowerCase().includes(SALES_SEARCH.toLowerCase())) : sales;
-  if(!filtered.length){ body.innerHTML = head+`<div class="tbl-card"><div class="empty">Hamna mauzo yanayolingana na "${SALES_SEARCH}".</div></div>`; return; }
+  if(!filtered.length){ body.innerHTML = head+`<div class="tbl-card"><div class="empty">Hamna mauzo yanayolingana na "${esc(SALES_SEARCH)}".</div></div>`; return; }
+  const actions = s => {
+    if(s.refunded) return `<span class="badge rejected">Imerejeshwa</span>`;
+    if(isStaff()) return `<button class="btn btn-outline btn-xs" onclick="denyEdit()">🔒 Hariri</button>`;
+    return `<div class="act-btns">${canEditRecords()?`<button class="btn btn-outline btn-xs" onclick="openEditSale('${s.id}')">Hariri</button>`:''}<button class="btn btn-outline btn-xs" onclick="refundSale('${s.id}')">Rejesha</button><button class="btn btn-red btn-xs" onclick="delSaleRecord('${s.id}')">Futa</button></div>`;
+  };
   const rows = filtered.map(s=>`<tr${s.refunded?' style="opacity:.55;"':''}>
-    <td>${s.date||''}</td><td>${s.product}</td><td>${s.qty}</td><td>${tzs(s.total)}</td><td>${tzs(s.profit)}</td><td>${s.pay}</td><td>${s.customer||'-'}</td>
-    <td>${s.refunded ? `<span class="badge rejected">Imerejeshwa</span>` : `<div class="act-btns"><button class="btn btn-outline btn-xs" onclick="refundSale('${s.id}')">Rejesha</button><button class="btn btn-red btn-xs" onclick="delSaleRecord('${s.id}')">Futa</button></div>`}</td>
+    <td>${s.date||''}</td><td>${esc(s.product)}</td><td>${s.qty}</td><td>${tzs(s.total)}</td>${money?`<td>${tzs(s.profit)}</td>`:''}<td>${esc(s.pay)}</td><td>${esc(s.customer||'-')}</td>${adv?`<td>${esc(s.by||'-')}</td>`:''}
+    <td>${actions(s)}</td>
   </tr>`).join('');
-  body.innerHTML = head+`<div class="tbl-card"><div class="scroll-x"><table><thead><tr><th>Tarehe</th><th>Bidhaa</th><th>Qty</th><th>Jumla</th><th>Faida</th><th>Malipo</th><th>Mteja</th><th>Hatua</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  body.innerHTML = head+`<div class="tbl-card"><div class="scroll-x"><table><thead><tr><th>Tarehe</th><th>Bidhaa</th><th>Qty</th><th>Jumla</th>${money?'<th>Faida</th>':''}<th>Malipo</th><th>Mteja</th>${adv?'<th>Aliuza</th>':''}<th>Hatua</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
+
+function openEditSale(id){
+  if(!needEditRecords()) return;
+  const sale = window._SHOP.sales.find(x=>x.id===id); if(!sale) return;
+  if(sale.refunded){ toast('Mauzo yaliyorejeshwa hayawezi kuhaririwa.','e'); return; }
+  document.getElementById('se_id').value = id;
+  document.getElementById('seTitle').textContent = 'Hariri Mauzo: '+sale.product;
+  document.getElementById('se_qty').value = sale.qty;
+  document.getElementById('se_price').value = sale.price;
+  document.getElementById('se_pay').value = sale.pay || 'Cash';
+  document.getElementById('se_cust').value = sale.customer || '';
+  document.getElementById('se_date').value = sale.date || today();
+  const m = document.getElementById('semsg'); m.textContent=''; m.className='mmsg';
+  om('mSaleEdit');
+}
+async function doEditSale(e){
+  e.preventDefault();
+  if(!needEditRecords()) return false;
+  const shop = window._SHOP.shop;
+  const id = document.getElementById('se_id').value;
+  const msg = document.getElementById('semsg'); msg.className='mmsg'; msg.textContent='';
+  const fail = t => { msg.textContent=t; msg.className='mmsg err'; return false; };
+  const qty = Number(document.getElementById('se_qty').value);
+  const price = Number(document.getElementById('se_price').value);
+  const date = document.getElementById('se_date').value;
+  if(!Number.isFinite(qty) || qty<=0) return fail('Weka idadi (zaidi ya sifuri).');
+  if(!Number.isFinite(price) || price<0) return fail('Bei ya kuuzia si sahihi.');
+  if(!date) return fail('Weka tarehe.');
+  if(date>today()) return fail('Tarehe haiwezi kuwa ya baadaye.');
+  const btn = document.getElementById('btnSaleEdit'); btn.disabled=true;
+  try{
+    await dbEditSale(shop.id, id, { qty, price, date,
+      pay: document.getElementById('se_pay').value, customer: document.getElementById('se_cust').value.trim() });
+    toast('Mauzo yamehaririwa','s');
+    cm('mSaleEdit');
+    await renderShopDashboard(shop); shopTab('sales');
+  }catch(err){ fail(stockErrMsg(err)); }
+  finally{ btn.disabled=false; }
+  return false;
 }
 
 async function refundSale(id){
+  if(!needManage()) return;
   if(!confirm('Rejesha mauzo haya? Stock itarudishwa na hii mauzo hayatahesabiwa tena kwenye mapato/faida, lakini rekodi itabaki kwa kumbukumbu.')) return;
   const shop = window._SHOP.shop;
-  const sale = window._SHOP.sales.find(x=>x.id===id);
-  if(!sale) return;
-  const item = window._SHOP.stock.find(i=>i.id===sale.productId);
-  if(item){ await dbUpdateDoc(shop.id,'stock', item.id, { qty: Number(item.qty||0) + Number(sale.qty||0) }); }
-  await dbUpdateDoc(shop.id,'sales', id, { refunded:true });
-  toast('Mauzo yamerejeshwa na stock imerudishwa','s');
+  try{
+    await dbReverseSale(shop.id, id, 'refund');
+    toast('Mauzo yamerejeshwa na stock imerudishwa','s');
+  }catch(err){ toast(stockErrMsg(err),'e'); }
   await renderShopDashboard(shop); shopTab('sales');
 }
 
 async function delSaleRecord(id){
+  if(!needManage()) return;
   if(!confirm('Futa rekodi hii ya mauzo KABISA? Ikiwa bidhaa bado ipo stokuni, stock itarudishwa. Hatua hii haiwezi kurudishwa.')) return;
   const shop = window._SHOP.shop;
-  const sale = window._SHOP.sales.find(x=>x.id===id);
-  if(!sale) return;
-  const item = window._SHOP.stock.find(i=>i.id===sale.productId);
-  if(item){ await dbUpdateDoc(shop.id,'stock', item.id, { qty: Number(item.qty||0) + Number(sale.qty||0) }); }
-  await dbDeleteDoc(shop.id,'sales', id);
-  toast('Mauzo yamefutwa na stock imerudishwa','s');
+  try{
+    await dbReverseSale(shop.id, id, 'delete');
+    toast('Mauzo yamefutwa na stock imerudishwa','s');
+  }catch(err){ toast(stockErrMsg(err),'e'); }
   await renderShopDashboard(shop); shopTab('sales');
 }
 function setSalesSearch(v){
@@ -1107,52 +1875,109 @@ function setSalesSearch(v){
 function renderExpTab(){
   const {expenses} = window._SHOP;
   const body = document.getElementById('shopTabBody');
+  const adv = isAdv();
   const head = `<div class="tbl-head" style="margin-bottom:14px;"><h3 style="margin:0;">Matumizi Yangu</h3><button class="btn btn-outline btn-sm" onclick="prepExpModal()">+ Matumizi</button></div>`;
   if(!expenses.length){ body.innerHTML = head+`<div class="tbl-card"><div class="empty">Hamna matumizi bado.</div></div>`; return; }
-  const rows = expenses.map(e=>`<tr><td>${e.date}</td><td>${e.category}</td><td>${e.desc}</td><td>${tzs(e.amount)}</td></tr>`).join('');
-  body.innerHTML = head+`<div class="tbl-card"><div class="scroll-x"><table><thead><tr><th>Tarehe</th><th>Aina</th><th>Maelezo</th><th>Kiasi</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  const act = e => isStaff()
+    ? `<button class="btn btn-outline btn-xs" onclick="denyEdit()">🔒 Hariri</button>`
+    : `<div class="act-btns"><button class="btn btn-outline btn-xs" onclick="openEditExpense('${e.id}')">Hariri</button><button class="btn btn-red btn-xs" onclick="delExpense('${e.id}')">Futa</button></div>`;
+  const rows = expenses.map(e=>`<tr><td>${e.date}</td><td>${esc(e.category)}</td><td>${esc(e.desc)}</td><td>${tzs(e.amount)}</td>${adv?`<td>${esc(e.by||'-')}</td><td>${act(e)}</td>`:''}</tr>`).join('');
+  body.innerHTML = head+`<div class="tbl-card"><div class="scroll-x"><table><thead><tr><th>Tarehe</th><th>Aina</th><th>Maelezo</th><th>Kiasi</th>${adv?'<th>Aliyerekodi</th><th>Hatua</th>':''}</tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 
 function renderDebtsTab(){
   const {debts} = window._SHOP;
   const body = document.getElementById('shopTabBody');
+  const adv = isAdv(), staff = isStaff();
   const head = `<div class="tbl-head" style="margin-bottom:14px;"><h3 style="margin:0;">Madeni ya Wateja</h3><button class="btn btn-outline btn-sm" onclick="openAddDebt()">+ Deni</button></div>`;
   if(!debts.length){ body.innerHTML = head+`<div class="tbl-card"><div class="empty">Hamna madeni yaliyosajiliwa.</div></div>`; return; }
   const rows = debts.map(d=>{
     const bal = Number(d.amount||0)-Number(d.paid||0);
     const paid = bal<=0;
-    return `<tr><td>${d.date||''}</td><td>${d.customer}<br><span style="color:var(--ink3);font-size:11.5px;">${d.phone||''}</span></td><td>${d.desc||''}</td><td>${tzs(d.amount)}</td><td>${tzs(d.paid||0)}</td><td>${tzs(bal)}</td>
-      <td>${paid?'<span class="badge approved">Imelipwa</span>':`<div class="act-btns"><button class="btn btn-green btn-xs" onclick="payDebt('${d.id}',${bal})">Lipa</button><button class="btn btn-red btn-xs" onclick="delDebt('${d.id}')">Futa</button></div>`}</td></tr>`;
+    let actions;
+    if(!adv){
+      actions = paid ? '<span class="badge approved">Imelipwa</span>' : `<div class="act-btns"><button class="btn btn-green btn-xs" onclick="payDebt('${d.id}',${bal})">Lipa</button><button class="btn btn-red btn-xs" onclick="delDebt('${d.id}')">Futa</button></div>`;
+    } else {
+      const parts = [ paid ? '<span class="badge approved">Imelipwa</span>' : `<button class="btn btn-green btn-xs" onclick="payDebt('${d.id}',${bal})">Lipa</button>` ];
+      if(staff) parts.push(`<button class="btn btn-outline btn-xs" onclick="denyEdit()">🔒 Hariri</button>`);
+      else parts.push(`<button class="btn btn-outline btn-xs" onclick="openEditDebt('${d.id}')">Hariri</button>`, `<button class="btn btn-red btn-xs" onclick="delDebt('${d.id}')">Futa</button>`);
+      actions = `<div class="act-btns">${parts.join('')}</div>`;
+    }
+    return `<tr><td>${d.date||''}</td><td>${esc(d.customer)}<br><span style="color:var(--ink3);font-size:11.5px;">${esc(d.phone||'')}</span></td><td>${esc(d.desc||'')}</td><td>${tzs(d.amount)}</td><td>${tzs(d.paid||0)}</td><td>${tzs(bal)}</td>${adv?`<td>${esc(d.by||'-')}</td>`:''}<td>${actions}</td></tr>`;
   }).join('');
-  body.innerHTML = head+`<div class="tbl-card"><div class="scroll-x"><table><thead><tr><th>Tarehe</th><th>Mteja</th><th>Maelezo</th><th>Deni</th><th>Amelipa</th><th>Salio</th><th>Hatua</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  body.innerHTML = head+`<div class="tbl-card"><div class="scroll-x"><table><thead><tr><th>Tarehe</th><th>Mteja</th><th>Maelezo</th><th>Deni</th><th>Amelipa</th><th>Salio</th>${adv?'<th>Aliyesajili</th>':''}<th>Hatua</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 
-function openAddDebt(){ document.getElementById('dt_date').value = today(); document.getElementById('debtForm').reset(); document.getElementById('dt_date').value = today(); om('mDebt'); }
+function openAddDebt(){
+  document.getElementById('debtForm').reset();
+  document.getElementById('dt_edit_id').value = '';
+  document.getElementById('dtTitle').textContent = 'Sajili Deni la Mteja';
+  document.getElementById('btnDebt').textContent = 'Hifadhi Deni';
+  const m = document.getElementById('dtmsg'); m.textContent=''; m.className='mmsg';
+  document.getElementById('dt_date').value = today();
+  om('mDebt');
+}
+function openEditDebt(id){
+  if(!needEditRecords()) return;
+  const d = window._SHOP.debts.find(x=>x.id===id); if(!d) return;
+  document.getElementById('debtForm').reset();
+  document.getElementById('dt_edit_id').value = id;
+  document.getElementById('dtTitle').textContent = 'Hariri Deni';
+  document.getElementById('btnDebt').textContent = 'Hifadhi Mabadiliko';
+  document.getElementById('dt_cust').value = d.customer||'';
+  document.getElementById('dt_phone').value = d.phone||'';
+  document.getElementById('dt_desc').value = d.desc||'';
+  document.getElementById('dt_amt').value = d.amount;
+  document.getElementById('dt_date').value = d.date||today();
+  const m = document.getElementById('dtmsg'); m.textContent=''; m.className='mmsg';
+  om('mDebt');
+}
 async function doDebt(e){
   e.preventDefault();
   const shop = window._SHOP.shop;
-  const btn=document.getElementById('btnDebt'); btn.disabled=true;
-  const debt = { customer:document.getElementById('dt_cust').value.trim(), phone:document.getElementById('dt_phone').value.trim(),
-    desc:document.getElementById('dt_desc').value.trim(), amount:Number(document.getElementById('dt_amt').value||0), paid:0, date:document.getElementById('dt_date').value };
-  await dbAddDoc(shop.id,'debts', debt);
-  toast('Deni limesajiliwa','s');
-  cm('mDebt'); e.target.reset();
-  await renderShopDashboard(shop); shopTab('debts');
-  btn.disabled=false; return false;
+  const msg = document.getElementById('dtmsg'); msg.className='mmsg'; msg.textContent='';
+  const fail = t => { msg.textContent=t; msg.className='mmsg err'; return false; };
+  const editId = document.getElementById('dt_edit_id').value;
+  if(editId && !needEditRecords()) return false;
+  const amount = Number(document.getElementById('dt_amt').value);
+  if(!Number.isFinite(amount) || amount<=0) return fail('Weka kiasi sahihi cha deni.');
+  const fields = { customer:document.getElementById('dt_cust').value.trim(), phone:document.getElementById('dt_phone').value.trim(),
+    desc:document.getElementById('dt_desc').value.trim(), amount, date:document.getElementById('dt_date').value };
+  if(editId){
+    const d = window._SHOP.debts.find(x=>x.id===editId);
+    if(d && amount < Number(d.paid||0)) return fail('Kiasi hakiwezi kuwa chini ya kilicholipwa tayari ('+tzs(d.paid)+').');
+  }
+  const btn = document.getElementById('btnDebt'); btn.disabled=true;
+  try{
+    if(editId){
+      await dbUpdateDoc(shop.id,'debts', editId, { ...fields, editedBy:VIEWER, editedAt:today() });
+      toast('Deni limehaririwa','s');
+    } else {
+      const debt = { id:uid(), ...fields, paid:0 };
+      if(isAdv()) debt.by = VIEWER;
+      await dbAddDoc(shop.id,'debts', debt);
+      toast('Deni limesajiliwa','s');
+    }
+    cm('mDebt'); e.target.reset(); document.getElementById('dt_edit_id').value='';
+    await renderShopDashboard(shop); shopTab('debts');
+  }catch(err){ fail('Imeshindikana kuhifadhi. Angalia mtandao kisha jaribu tena.'); }
+  finally{ btn.disabled=false; }
+  return false;
 }
 async function payDebt(id, balance){
   const amtStr = prompt('Ameleta kiasi gani sasa? (Salio: '+tzs(balance)+')');
   if(amtStr===null) return;
   const amt = Number(amtStr);
-  if(!amt || amt<=0){ toast('Weka kiasi sahihi','e'); return; }
+  if(!Number.isFinite(amt) || amt<=0){ toast('Weka kiasi sahihi','e'); return; }
   const shop = window._SHOP.shop;
-  const debt = window._SHOP.debts.find(d=>d.id===id);
-  const newPaid = Math.min(Number(debt.paid||0)+amt, Number(debt.amount||0));
-  await dbUpdateDoc(shop.id,'debts', id, {paid:newPaid});
-  toast('Malipo yamesajiliwa','s');
+  try{
+    await dbPayDebt(shop.id, id, amt);
+    toast(amt>balance ? 'Malipo yamesajiliwa (yamewekwa hadi salio lote)' : 'Malipo yamesajiliwa','s');
+  }catch(err){ toast(stockErrMsg(err),'e'); }
   await renderShopDashboard(shop); shopTab('debts');
 }
 async function delDebt(id){
+  if(!needManage()) return;
   if(!confirm('Una uhakika unataka kufuta deni hili?')) return;
   await dbDeleteDoc(window._SHOP.shop.id,'debts',id);
   toast('Deni limefutwa','s');
@@ -1205,6 +2030,7 @@ function buildRpt(){
   const profitTotal = s.reduce((a,x)=>a+Number(x.profit||0),0);
   const expTotal = e.reduce((a,x)=>a+Number(x.amount||0),0);
   const net = profitTotal - expTotal;
+  const money = canSeeMoney();
 
   const byProduct = {};
   s.forEach(x=>{
@@ -1218,7 +2044,7 @@ function buildRpt(){
     <div class="tbl-card" style="margin-top:14px;">
       <h3 style="margin:0 0 10px;font-size:15px;">🏆 Bidhaa Zinazouzwa Sana</h3>
       <div class="scroll-x"><table><thead><tr><th>#</th><th>Bidhaa</th><th>Idadi Iliyouzwa</th><th>Mapato</th></tr></thead><tbody>
-        ${topProducts.map(([name,v],idx)=>`<tr><td>${idx+1}</td><td>${name}</td><td>${v.qty}</td><td>${tzs(v.total)}</td></tr>`).join('')}
+        ${topProducts.map(([name,v],idx)=>`<tr><td>${idx+1}</td><td>${esc(name)}</td><td>${v.qty}</td><td>${tzs(v.total)}</td></tr>`).join('')}
       </tbody></table></div>
     </div>` : '';
 
@@ -1228,7 +2054,7 @@ function buildRpt(){
       <div class="rpt-card"><h4>💰 Muhtasari wa Mauzo</h4>
         <div class="rpt-row"><span class="rl">Idadi ya Mauzo</span><span class="rv">${s.length}</span></div>
         <div class="rpt-row"><span class="rl">Jumla ya Mauzo</span><span class="rv g">${tzs(salesTotal)}</span></div>
-        <div class="rpt-row"><span class="rl">Jumla ya Faida</span><span class="rv g">${tzs(profitTotal)}</span></div>
+        ${money?`<div class="rpt-row"><span class="rl">Jumla ya Faida</span><span class="rv g">${tzs(profitTotal)}</span></div>`:''}
       </div>
       <div class="rpt-card"><h4>💸 Muhtasari wa Matumizi</h4>
         <div class="rpt-row"><span class="rl">Idadi ya Matumizi</span><span class="rv">${e.length}</span></div>
@@ -1236,7 +2062,7 @@ function buildRpt(){
       </div>
     </div>
     ${topHtml}
-    <div class="total-box"><div class="tl">Faida Halisi (Net)</div><div class="ta">${tzs(net)}</div><div class="ts">Faida ya Mauzo − Matumizi</div></div>`;
+    ${money?`<div class="total-box"><div class="tl">Faida Halisi (Net)</div><div class="ta">${tzs(net)}</div><div class="ts">Faida ya Mauzo − Matumizi</div></div>`:''}`;
 }
 
 function downloadStatement(){
@@ -1248,15 +2074,16 @@ function downloadStatement(){
   const profitTotal = s.reduce((a,x)=>a+Number(x.profit||0),0);
   const expTotal = e.reduce((a,x)=>a+Number(x.amount||0),0);
   const net = profitTotal - expTotal;
+  const money = canSeeMoney();
   const owed = debts.filter(d=>Number(d.paid||0)<Number(d.amount||0)).reduce((a,d)=>a+(Number(d.amount||0)-Number(d.paid||0)),0);
   const label = {day:'Leo',week:'Wiki Hii',month:'Mwezi Huu',year:'Mwaka Huu',custom:'Kipindi Maalum'}[CURRENT_RPT];
   const byProduct = {};
   s.forEach(x=>{ const k=x.product||'Bidhaa'; if(!byProduct[k]) byProduct[k]={qty:0,total:0}; byProduct[k].qty+=Number(x.qty||0); byProduct[k].total+=Number(x.total||0); });
   const topProducts = Object.entries(byProduct).sort((a,b)=>b[1].qty-a[1].qty).slice(0,5);
-  const topRows = topProducts.map(([name,v],idx)=>`<tr><td>${idx+1}</td><td>${name}</td><td>${v.qty}</td><td>${tzs(v.total)}</td></tr>`).join('') || '<tr><td colspan="4" style="text-align:center;color:#888;">Hamna mauzo</td></tr>';
-  const salesRows = s.map(x=>`<tr><td>${x.date}</td><td>${x.product}</td><td>${x.qty}</td><td>${tzs(x.total)}</td><td>${tzs(x.profit)}</td></tr>`).join('') || '<tr><td colspan="5" style="text-align:center;color:#888;">Hamna mauzo</td></tr>';
-  const expRows = e.map(x=>`<tr><td>${x.date}</td><td>${x.category}</td><td>${x.desc}</td><td>${tzs(x.amount)}</td></tr>`).join('') || '<tr><td colspan="4" style="text-align:center;color:#888;">Hamna matumizi</td></tr>';
-  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Taarifa ya Biashara — ${shop.shopName}</title>
+  const topRows = topProducts.map(([name,v],idx)=>`<tr><td>${idx+1}</td><td>${esc(name)}</td><td>${v.qty}</td><td>${tzs(v.total)}</td></tr>`).join('') || '<tr><td colspan="4" style="text-align:center;color:#888;">Hamna mauzo</td></tr>';
+  const salesRows = s.map(x=>`<tr><td>${x.date}</td><td>${esc(x.product)}</td><td>${x.qty}</td><td>${tzs(x.total)}</td>${money?`<td>${tzs(x.profit)}</td>`:''}</tr>`).join('') || `<tr><td colspan="${money?5:4}" style="text-align:center;color:#888;">Hamna mauzo</td></tr>`;
+  const expRows = e.map(x=>`<tr><td>${x.date}</td><td>${esc(x.category)}</td><td>${esc(x.desc)}</td><td>${tzs(x.amount)}</td></tr>`).join('') || '<tr><td colspan="4" style="text-align:center;color:#888;">Hamna matumizi</td></tr>';
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Taarifa ya Biashara — ${esc(shop.shopName)}</title>
   <style>
     body{font-family:Arial,Helvetica,sans-serif;color:#111;padding:32px;max-width:800px;margin:0 auto;}
     h1{margin:0 0 4px;font-size:22px;} .sub{color:#555;margin-bottom:24px;}
@@ -1269,19 +2096,19 @@ function downloadStatement(){
     .net{background:#f0fdf4;border-color:#86efac;}
     @media print{ body{padding:10px;} }
   </style></head><body>
-    <h1>${shop.shopName}</h1>
-    <div class="sub">Taarifa ya Biashara — ${label} &nbsp;|&nbsp; Kipindi: ${from} hadi ${to} &nbsp;|&nbsp; Mmiliki: ${shop.firstName} ${shop.lastName} &nbsp;|&nbsp; ${shop.phone||''}</div>
+    <h1>${esc(shop.shopName)}</h1>
+    <div class="sub">Taarifa ya Biashara — ${label} &nbsp;|&nbsp; Kipindi: ${from} hadi ${to} ${shop.firstName ? ` &nbsp;|&nbsp; Mmiliki: ${esc(shop.firstName)} ${esc(shop.lastName||'')}` : (shop.location ? ` &nbsp;|&nbsp; ${esc(shop.location)}` : '')}${shop.phone ? ` &nbsp;|&nbsp; ${esc(shop.phone)}` : ''}${isAdv() ? ` &nbsp;|&nbsp; Imetolewa na: ${esc(VIEWER)}` : ''}</div>
     <div class="totals">
       <div class="tbox">Jumla ya Mauzo<b>${tzs(salesTotal)}</b></div>
-      <div class="tbox">Jumla ya Faida<b>${tzs(profitTotal)}</b></div>
+      ${money?`<div class="tbox">Jumla ya Faida<b>${tzs(profitTotal)}</b></div>`:''}
       <div class="tbox">Jumla ya Matumizi<b>${tzs(expTotal)}</b></div>
-      <div class="tbox net">Faida Halisi<b>${tzs(net)}</b></div>
+      ${money?`<div class="tbox net">Faida Halisi<b>${tzs(net)}</b></div>`:''}
       <div class="tbox">Madeni Yanayodaiwa<b>${tzs(owed)}</b></div>
     </div>
     <h3>Bidhaa Zinazouzwa Sana</h3>
     <table><thead><tr><th>#</th><th>Bidhaa</th><th>Idadi</th><th>Mapato</th></tr></thead><tbody>${topRows}</tbody></table>
     <h3>Mauzo</h3>
-    <table><thead><tr><th>Tarehe</th><th>Bidhaa</th><th>Qty</th><th>Jumla</th><th>Faida</th></tr></thead><tbody>${salesRows}</tbody></table>
+    <table><thead><tr><th>Tarehe</th><th>Bidhaa</th><th>Qty</th><th>Jumla</th>${money?'<th>Faida</th>':''}</tr></thead><tbody>${salesRows}</tbody></table>
     <h3>Matumizi</h3>
     <table><thead><tr><th>Tarehe</th><th>Aina</th><th>Maelezo</th><th>Kiasi</th></tr></thead><tbody>${expRows}</tbody></table>
     <p style="color:#888;font-size:11px;margin-top:30px;">Imetengenezwa na Mauzo Daily — ${new Date().toLocaleString()}</p>
@@ -1325,8 +2152,11 @@ async function doLogin(e){
     cm('mLogin'); toast('Karibu Admin','s'); await renderApp(); btn.disabled=false; return false;
   }
   const shops = await dbShops();
-  const shop = shops.find(s=>s.email===em);
-  if(!shop || shop.password!==pw){ msg.textContent='Email au password si sahihi.'; msg.className='mmsg err'; btn.disabled=false; return false; }
+  const shop = shops.find(s=>s.email===em && !s.type);
+  if(!shop || shop.password!==pw){
+    const adv = shops.find(s=>s.type==='owner' && s.email===em && s.password===pw);
+    msg.textContent = adv ? 'Hii ni Akaunti ya Kina. Bofya "Akaunti ya Kina" chini ya fomu hii kuingia.' : 'Email au password si sahihi.';
+    msg.className='mmsg err'; btn.disabled=false; return false; }
   SS.set({role:'shop', id:shop.id, shopName:shop.shopName, firstName:shop.firstName, status:shop.status});
   cm('mLogin'); toast('Karibu '+shop.shopName,'s'); await renderApp();
   btn.disabled=false; return false;
@@ -1362,6 +2192,7 @@ function calcStockTotal(){
 }
 function resetStockForm(){
   document.getElementById('st_edit_id').value='';
+  document.getElementById('st_orig_qty').value='0';
   document.getElementById('st_name').value='';
   document.getElementById('st_cat').value='Vifaa vya Simu';
   document.getElementById('st_qty').value=1;
@@ -1372,12 +2203,17 @@ function resetStockForm(){
   document.getElementById('stockTotal').textContent='TZS 0';
   document.getElementById('stockModalTitle').textContent='Ongeza Bidhaa Stokuni';
   document.getElementById('btnAddStock').textContent='Hifadhi Bidhaa';
+  document.getElementById('stEditHint').style.display='none';
+  const m=document.getElementById('stmsg'); m.textContent=''; m.className='mmsg';
 }
-function openAddStock(){ resetStockForm(); om('mStock'); }
+function openAddStock(){ if(!needManage()) return; resetStockForm(); om('mStock'); }
 function editStock(id){
+  if(!needManage()) return;
   const item = STOCK_CACHE.find(i=>i.id===id);
   if(!item) return;
+  resetStockForm();
   document.getElementById('st_edit_id').value = item.id;
+  document.getElementById('st_orig_qty').value = Number(item.qty||0);
   document.getElementById('st_name').value = item.name;
   document.getElementById('st_cat').value = item.category;
   document.getElementById('st_qty').value = item.qty;
@@ -1388,33 +2224,163 @@ function editStock(id){
   calcStockTotal();
   document.getElementById('stockModalTitle').textContent='Hariri Bidhaa: '+item.name;
   document.getElementById('btnAddStock').textContent='Hifadhi Mabadiliko';
+  document.getElementById('stEditHint').style.display='block';
   om('mStock');
 }
+const normName = n => String(n||'').trim().toLowerCase().replace(/\s+/g,' ');
 async function doAddStock(e){
   e.preventDefault();
+  if(!needManage()) return false;
   const shop = window._SHOP.shop;
-  const btn=document.getElementById('btnAddStock'); btn.disabled=true;
+  const msg = document.getElementById('stmsg'); msg.className='mmsg'; msg.textContent='';
+  const btn = document.getElementById('btnAddStock');
   const editId = document.getElementById('st_edit_id').value;
-  const item = {
-    name: document.getElementById('st_name').value.trim(),
-    category: document.getElementById('st_cat').value,
-    qty: Number(document.getElementById('st_qty').value||0),
-    cost: Number(document.getElementById('st_cost').value||0),
-    price: Number(document.getElementById('st_price').value||0),
+  const name = document.getElementById('st_name').value.trim();
+  const qty = Number(document.getElementById('st_qty').value);
+  const cost = Number(document.getElementById('st_cost').value);
+  const price = Number(document.getElementById('st_price').value);
+  const fail = t => { msg.textContent=t; msg.className='mmsg err'; return false; };
+  if(!name) return fail('Weka jina la bidhaa.');
+  if(!Number.isFinite(qty) || qty<0) return fail('Idadi lazima iwe sifuri au zaidi.');
+  if(!Number.isFinite(cost) || cost<0) return fail('Bei ya kununulia si sahihi.');
+  if(!Number.isFinite(price) || price<0) return fail('Bei ya kuuzia si sahihi.');
+  // Bidhaa mbili zenye jina moja hugawanya stock na kuharibu hesabu
+  const dup = STOCK_CACHE.find(i=>i.id!==editId && normName(i.name)===normName(name));
+  if(dup) return fail('Bidhaa "'+dup.name+'" tayari ipo. Tumia kitufe cha "Ongeza Stock" kwenye bidhaa hiyo badala ya kuiunda mara ya pili.');
+  if(price>0 && price<cost && !confirm('Bei ya kuuzia ('+tzs(price)+') ni ndogo kuliko ya kununulia ('+tzs(cost)+'). Kila kipande kitauzwa kwa hasara. Endelea?')) return false;
+  const fields = {
+    name, category: document.getElementById('st_cat').value, cost, price,
     minQty: Number(document.getElementById('st_min').value||5),
     desc: document.getElementById('st_desc').value.trim()
   };
+  let delta = 0;
   if(editId){
-    await dbUpdateDoc(shop.id,'stock', editId, item);
-    toast('Bidhaa imesasishwa','s');
-  } else {
-    item.id = uid();
-    await dbAddDoc(shop.id,'stock', item);
-    toast('Bidhaa imehifadhiwa','s');
+    const orig = Number(document.getElementById('st_orig_qty').value||0);
+    delta = qty - orig;
+    if(delta!==0 && !confirm('Idadi itabadilika kutoka '+orig+' hadi '+qty+' ('+(delta>0?'+':'')+delta+'). Hii ni marekebisho ya hesabu na yataingia kwenye historia ya ukaguzi.\n\nUkiwa unaongeza mzigo mpya, tumia kitufe cha "Ongeza Stock" ili bei ya wastani ihesabiwe sawa.\n\nEndelea na marekebisho?')) return false;
   }
-  cm('mStock'); resetStockForm();
-  await renderShopDashboard(shop); shopTab('stock');
-  btn.disabled=false; return false;
+  btn.disabled=true;
+  try{
+    if(editId){
+      await dbEditProduct(shop.id, editId, fields, delta, 'Marekebisho ya mkono');
+      toast('Bidhaa imesasishwa','s');
+    } else {
+      await dbAddProduct(shop.id, {...fields, qty});
+      toast('Bidhaa imehifadhiwa','s');
+    }
+    cm('mStock'); resetStockForm();
+    await renderShopDashboard(shop); shopTab('stock');
+  }catch(err){ msg.textContent = stockErrMsg(err); msg.className='mmsg err'; }
+  finally{ btn.disabled=false; }
+  return false;
+}
+
+// ── MZIGO MPYA (Ongeza Stock) ──
+function openRestock(id){
+  if(!needManage()) return;
+  const item = STOCK_CACHE.find(i=>i.id===id);
+  if(!item) return;
+  document.getElementById('rs_id').value = item.id;
+  document.getElementById('rsTitle').textContent = 'Ongeza Stock: '+item.name;
+  document.getElementById('rsCurrent').innerHTML = 'Iliyopo sasa: <strong>'+Number(item.qty||0)+'</strong> · Bei ya kununulia: <strong>'+tzs(item.cost)+'</strong> · Bei ya kuuzia: <strong>'+tzs(item.price)+'</strong>';
+  document.getElementById('rs_qty').value = '';
+  document.getElementById('rs_cost').value = item.cost;
+  document.getElementById('rs_price').value = '';
+  const m=document.getElementById('rsmsg'); m.textContent=''; m.className='mmsg';
+  calcRestock();
+  om('mRestock');
+}
+function calcRestock(){
+  const item = STOCK_CACHE.find(i=>i.id===document.getElementById('rs_id').value);
+  if(!item) return;
+  const add = Number(document.getElementById('rs_qty').value||0);
+  const unit = Number(document.getElementById('rs_cost').value||0);
+  const cur = Number(item.qty||0), base = Math.max(0,cur);
+  const newQty = cur + add;
+  const newCost = (base+add)>0 ? (base*Number(item.cost||0) + add*unit)/(base+add) : unit;
+  document.getElementById('rsAfter').textContent = 'Idadi mpya: '+newQty;
+  document.getElementById('rsAfterSub').textContent = 'Bei ya wastani ya kununulia: '+tzs(newCost)+' · Thamani ya stock: '+tzs(Math.max(0,newQty)*newCost);
+}
+async function doRestock(e){
+  e.preventDefault();
+  if(!needManage()) return false;
+  const shop = window._SHOP.shop;
+  const id = document.getElementById('rs_id').value;
+  const add = Number(document.getElementById('rs_qty').value);
+  const unit = Number(document.getElementById('rs_cost').value);
+  const newPrice = Number(document.getElementById('rs_price').value||0);
+  const msg = document.getElementById('rsmsg'); msg.className='mmsg'; msg.textContent='';
+  if(!Number.isFinite(add) || add<=0){ msg.textContent='Weka idadi inayoongezwa (zaidi ya sifuri).'; msg.className='mmsg err'; return false; }
+  if(!Number.isFinite(unit) || unit<0){ msg.textContent='Weka bei ya kununulia ya mzigo huu.'; msg.className='mmsg err'; return false; }
+  const btn = document.getElementById('btnRestock'); btn.disabled=true;
+  try{
+    await dbRestock(shop.id, id, add, unit, newPrice);
+    toast('Mzigo umeongezwa kwenye stock','s');
+    cm('mRestock');
+    await renderShopDashboard(shop); shopTab('stock');
+  }catch(err){ msg.textContent = stockErrMsg(err); msg.className='mmsg err'; }
+  finally{ btn.disabled=false; }
+  return false;
+}
+
+// ── UKAGUZI WA HESABU ──
+// Kila mabadiliko ya idadi yanaandikwa kwenye historia. Idadi inayopaswa kuwepo =
+// jumla ya historia yote. Ikitofautiana na iliyopo, kuna badiliko lililofanyika nje ya mfumo huu.
+let STOCK_AUDIT_OPEN = false;
+async function toggleStockAudit(){
+  if(!needManage()) return;
+  STOCK_AUDIT_OPEN = !STOCK_AUDIT_OPEN;
+  if(!STOCK_AUDIT_OPEN){ const b=document.getElementById('stockAudit'); if(b) b.innerHTML=''; return; }
+  await loadStockAudit();
+}
+async function loadStockAudit(){
+  const box = document.getElementById('stockAudit');
+  if(!box) return;
+  box.innerHTML = '<div class="tbl-card" style="margin-bottom:14px;"><div class="empty">Inakagua hesabu...</div></div>';
+  window._SHOP.stockLog = await dbGetColl(window._SHOP.shop.id,'stockLog');
+  renderStockAudit();
+}
+function renderStockAudit(){
+  const box = document.getElementById('stockAudit');
+  if(!box) return;
+  const {stock, stockLog} = window._SHOP;
+  const by = {};
+  stockLog.forEach(l=>{ (by[l.productId] = by[l.productId]||[]).push(l); });
+  let legacy = 0, mismatched = 0;
+  const rows = stock.map(p=>{
+    const logs = by[p.id];
+    const actual = Number(p.qty||0);
+    if(!logs){ legacy++; return `<tr><td>${p.name}</td><td colspan="4" style="color:var(--ink3);">Hakuna historia bado</td><td>${actual}</td><td><span class="badge" style="background:rgba(148,163,184,0.18);color:#94a3b8;">Haijaanza</span></td></tr>`; }
+    const sum = t => logs.filter(l=>t.includes(l.type)).reduce((a,l)=>a+Number(l.qty||0),0);
+    const incoming = sum(['ufunguzi','ongezeko']);
+    const sold = -sum(['mauzo','marekebisho-mauzo']) - sum(['rejesha','futa-mauzo']);
+    const adj = sum(['marekebisho']);
+    const expected = logs.reduce((a,l)=>a+Number(l.qty||0),0);
+    const diff = actual - expected;
+    if(diff!==0) mismatched++;
+    const status = diff===0 ? `<span class="badge approved">✓ Sawa</span>` : `<span class="badge rejected">Tofauti ${diff>0?'+':''}${diff}</span>`;
+    return `<tr><td>${p.name}</td><td>${incoming}</td><td>${sold}</td><td>${adj>0?'+':''}${adj}</td><td><strong>${expected}</strong></td><td><strong>${actual}</strong></td><td>${status}</td></tr>`;
+  }).join('');
+  box.innerHTML = `<div class="tbl-card" style="margin-bottom:14px;">
+    <h3 style="margin:0 0 6px;font-size:15px;">🔍 Ukaguzi wa Hesabu ya Stock</h3>
+    <p style="margin:0 0 10px;font-size:12.5px;color:var(--ink3);line-height:1.6;">Inapaswa kuwepo = Imeingia − Imeuzwa + Marekebisho. Ikiwa "Iliyopo" ni tofauti na "Inapaswa", idadi ilibadilishwa nje ya mfumo huu.</p>
+    ${mismatched ? `<div class="info-box amber" style="margin-bottom:10px;">⚠️ Bidhaa ${mismatched} zina tofauti kati ya historia na idadi iliyopo.</div>` : ''}
+    <div class="scroll-x"><table><thead><tr><th>Bidhaa</th><th>Imeingia</th><th>Imeuzwa</th><th>Marekebisho</th><th>Inapaswa</th><th>Iliyopo</th><th>Hali</th></tr></thead><tbody>${rows}</tbody></table></div>
+    ${legacy ? `<div style="margin-top:12px;"><button class="btn btn-outline btn-sm" onclick="baselineStockAudit()">Anzisha Ukaguzi kwa Bidhaa ${legacy} za Zamani</button><div style="font-size:11.5px;color:var(--ink3);margin-top:6px;">Bidhaa zilizosajiliwa kabla ya ukaguzi huu hazina historia. Hesabu mzigo halisi kwanza, ihariri idadi sahihi, kisha bofya hapa — idadi ya sasa itakuwa hesabu ya mwanzo.</div></div>` : ''}
+  </div>`;
+}
+async function baselineStockAudit(){
+  if(!needManage()) return;
+  const {shop, stock, stockLog} = window._SHOP;
+  const have = new Set(stockLog.map(l=>l.productId));
+  const todo = stock.filter(p=>!have.has(p.id));
+  if(!todo.length) return;
+  if(!confirm('Idadi ya sasa ya bidhaa '+todo.length+' itawekwa kama "hesabu ya mwanzo" ya ukaguzi. Hakikisha idadi zilizopo kwenye mfumo ni sahihi (umehesabu mzigo halisi). Endelea?')) return;
+  for(const p of todo){
+    await dbAddDoc(shop.id,'stockLog', { id:uid(), ...stockLogEntry(p,'ufunguzi',Number(p.qty||0),p.cost,Number(p.qty||0),'Hesabu ya mwanzo (ukaguzi)') });
+  }
+  toast('Ukaguzi umeanzishwa','s');
+  await loadStockAudit();
 }
 
 // ════════════════════════════════════════════════
@@ -1425,6 +2391,8 @@ function prepSaleModal(){
   sel.innerHTML = '<option value="">-- Chagua Bidhaa --</option>' + STOCK_CACHE.filter(i=>i.qty>0).map(i=>`<option value="${i.id}">${i.name} (Stock: ${i.qty})</option>`).join('');
   document.getElementById('sl_search').value = '';
   document.getElementById('saleDetails').style.display='none';
+  document.getElementById('saleTl').textContent = canSeeMoney() ? 'Faida ya Uuzaji Huu' : 'Jumla ya Uuzaji Huu';
+  document.getElementById('saleTs').style.display = canSeeMoney() ? '' : 'none';
   om('mSale');
 }
 function filterProdSelect(){
@@ -1452,45 +2420,186 @@ function calcSale(){
   const qty = Number(document.getElementById('sl_qty').value||0);
   const price = Number(document.getElementById('sl_price').value||0);
   document.getElementById('saleTotal').textContent = tzs(qty*price);
-  document.getElementById('saleProfit').textContent = tzs(qty*(price-Number(item.cost||0)));
+  document.getElementById('saleProfit').textContent = canSeeMoney() ? tzs(qty*(price-Number(item.cost||0))) : tzs(qty*price);
 }
 async function doSale(e){
   e.preventDefault();
   const shop = window._SHOP.shop;
   const id = document.getElementById('sl_prod').value;
   const item = STOCK_CACHE.find(i=>i.id===id);
-  const msg=document.getElementById('slmsg'); msg.className='mmsg';
-  if(!item){ msg.textContent='Chagua bidhaa kwanza.'; msg.className='mmsg err'; return false; }
-  const qty = Number(document.getElementById('sl_qty').value||0);
-  const price = Number(document.getElementById('sl_price').value||0);
-  if(qty>item.qty){ msg.textContent='Idadi uliyoweka inazidi stock iliyopo ('+item.qty+').'; msg.className='mmsg err'; return false; }
+  const msg=document.getElementById('slmsg'); msg.className='mmsg'; msg.textContent='';
+  const fail = t => { msg.textContent=t; msg.className='mmsg err'; return false; };
+  if(!item) return fail('Chagua bidhaa kwanza.');
+  const qty = Number(document.getElementById('sl_qty').value);
+  const price = Number(document.getElementById('sl_price').value);
+  if(!Number.isFinite(qty) || qty<=0) return fail('Weka idadi iliyouzwa (zaidi ya sifuri).');
+  if(!Number.isFinite(price) || price<0) return fail('Bei ya kuuzia si sahihi.');
   const btn=document.getElementById('btnSale'); btn.disabled=true;
-  const total = qty*price, profit = qty*(price-Number(item.cost||0));
-  const sale = { id: uid(), product:item.name, productId:item.id, qty, price, total, profit,
-    pay: document.getElementById('sl_pay').value, customer: document.getElementById('sl_cust').value.trim(), date: today() };
-  await dbAddDoc(shop.id,'sales', sale);
-  await dbUpdateDoc(shop.id,'stock', item.id, { qty: item.qty - qty });
-  toast('Uuzaji umehifadhiwa','s');
-  cm('mSale'); e.target.reset(); document.getElementById('saleDetails').style.display='none';
-  await renderShopDashboard(shop); shopTab('sales');
-  btn.disabled=false; return false;
+  try{
+    await dbSell(shop.id, id, qty, price, {
+      pay: document.getElementById('sl_pay').value,
+      customer: document.getElementById('sl_cust').value.trim(),
+      date: today(),
+      ...(isAdv() ? {by:VIEWER} : {})
+    });
+    toast('Uuzaji umehifadhiwa','s');
+    cm('mSale'); e.target.reset(); document.getElementById('saleDetails').style.display='none';
+    await renderShopDashboard(shop); shopTab('sales');
+  }catch(err){
+    fail(stockErrMsg(err));
+    if(err && err.code==='LOW_STOCK'){ await renderShopDashboard(shop); }
+  }
+  finally{ btn.disabled=false; }
+  return false;
 }
 
 // ════════════════════════════════════════════════
 // FORM HANDLERS — EXPENSES
 // ════════════════════════════════════════════════
-function prepExpModal(){ document.getElementById('ex_date').value = today(); om('mExp'); }
+function prepExpModal(){
+  document.getElementById('expForm').reset();
+  document.getElementById('ex_edit_id').value = '';
+  document.getElementById('exTitle').textContent = 'Rekodi Matumizi';
+  document.getElementById('btnExp').textContent = 'Hifadhi Matumizi';
+  const m = document.getElementById('exmsg'); m.textContent=''; m.className='mmsg';
+  document.getElementById('ex_date').value = today();
+  om('mExp');
+}
+function openEditExpense(id){
+  if(!needEditRecords()) return;
+  const x = window._SHOP.expenses.find(r=>r.id===id); if(!x) return;
+  document.getElementById('expForm').reset();
+  document.getElementById('ex_edit_id').value = id;
+  document.getElementById('exTitle').textContent = 'Hariri Matumizi';
+  document.getElementById('btnExp').textContent = 'Hifadhi Mabadiliko';
+  document.getElementById('ex_cat').value = x.category;
+  document.getElementById('ex_desc').value = x.desc||'';
+  document.getElementById('ex_amt').value = x.amount;
+  document.getElementById('ex_date').value = x.date||today();
+  const m = document.getElementById('exmsg'); m.textContent=''; m.className='mmsg';
+  om('mExp');
+}
 async function doExpense(e){
   e.preventDefault();
   const shop = window._SHOP.shop;
-  const btn=document.getElementById('btnExp'); btn.disabled=true;
-  const exp = { id: uid(), category:document.getElementById('ex_cat').value, desc:document.getElementById('ex_desc').value.trim(),
-    amount:Number(document.getElementById('ex_amt').value||0), date:document.getElementById('ex_date').value };
-  await dbAddDoc(shop.id,'expenses', exp);
-  toast('Matumizi yamehifadhiwa','s');
-  cm('mExp'); e.target.reset();
-  await renderShopDashboard(shop); shopTab('exp');
-  btn.disabled=false; return false;
+  const msg = document.getElementById('exmsg'); msg.className='mmsg'; msg.textContent='';
+  const fail = t => { msg.textContent=t; msg.className='mmsg err'; return false; };
+  const editId = document.getElementById('ex_edit_id').value;
+  if(editId && !needEditRecords()) return false;
+  const amount = Number(document.getElementById('ex_amt').value);
+  const date = document.getElementById('ex_date').value;
+  if(!Number.isFinite(amount) || amount<=0) return fail('Weka kiasi sahihi.');
+  if(!date) return fail('Weka tarehe.');
+  if(isAdv() && date>today()) return fail('Tarehe haiwezi kuwa ya baadaye.');
+  const fields = { category:document.getElementById('ex_cat').value, desc:document.getElementById('ex_desc').value.trim(), amount, date };
+  const btn = document.getElementById('btnExp'); btn.disabled=true;
+  try{
+    if(editId){
+      await dbUpdateDoc(shop.id,'expenses', editId, { ...fields, editedBy:VIEWER, editedAt:today() });
+      toast('Matumizi yamehaririwa','s');
+    } else {
+      const exp = { id:uid(), ...fields };
+      if(isAdv()) exp.by = VIEWER;
+      await dbAddDoc(shop.id,'expenses', exp);
+      toast('Matumizi yamehifadhiwa','s');
+    }
+    cm('mExp'); e.target.reset(); document.getElementById('ex_edit_id').value='';
+    await renderShopDashboard(shop); shopTab('exp');
+  }catch(err){ fail('Imeshindikana kuhifadhi. Angalia mtandao kisha jaribu tena.'); }
+  finally{ btn.disabled=false; }
+  return false;
+}
+async function delExpense(id){
+  if(!needEditRecords()) return;
+  if(!confirm('Futa rekodi hii ya matumizi? Hatua hii haiwezi kurudishwa.')) return;
+  await dbDeleteDoc(window._SHOP.shop.id,'expenses',id);
+  toast('Matumizi yamefutwa','s');
+  await renderShopDashboard(window._SHOP.shop); shopTab('exp');
+}
+
+// ════════════════════════════════════════════════
+// WAFANYAKAZI (mmiliki wa akaunti ya kina tu)
+// ════════════════════════════════════════════════
+let STAFF_LIST = [];
+async function renderStaffTab(){
+  if(!isOwner()) return denyEdit();
+  const shop = window._SHOP.shop;
+  const body = document.getElementById('shopTabBody');
+  body.innerHTML = '<div class="tbl-card"><div class="empty">Inapakia wafanyakazi...</div></div>';
+  STAFF_LIST = await dbGetColl(shop.id,'staff');
+  const head = `<div class="tbl-head" style="margin-bottom:14px;"><h3 style="margin:0;">Wafanyakazi Wangu</h3><button class="btn btn-primary btn-sm" onclick="openAddStaff()">+ Ongeza Mfanyakazi</button></div>`;
+  const info = `<div class="info-box amber" style="font-size:12.5px;line-height:1.7;margin-bottom:14px;">Mfanyakazi anaingia kwa <strong>code</strong> (Ingia → Akaunti ya Kina → Ingia Mfanyakazi). Anaweza kuuza, kusajili madeni na matumizi, kuona bidhaa zinazokaribia kuisha na kutoa ripoti. <strong>Haoni bei ya kununulia wala faida, na hawezi kuhariri chochote.</strong> Wafanyakazi ni bila kikomo.</div>`;
+  if(!STAFF_LIST.length){ body.innerHTML = head+info+`<div class="tbl-card"><div class="empty">Hakuna wafanyakazi bado. Bofya "+ Ongeza Mfanyakazi".</div></div>`; return; }
+  const rows = STAFF_LIST.map(st=>{
+    const code = shop.id+'-'+st.id;
+    const susp = st.status==='suspended';
+    return `<tr>
+      <td><strong>${esc(st.name)}</strong><br><span style="color:var(--ink3);font-size:11.5px;">${esc(st.phone||'')}</span></td>
+      <td><strong style="letter-spacing:1px;font-family:'IBM Plex Mono',monospace;">${esc(code)}</strong></td>
+      <td>${susp ? '<span class="badge" style="background:rgba(148,163,184,0.18);color:#94a3b8;">Amesimamishwa</span>' : '<span class="badge approved">Hai</span>'}</td>
+      <td><div class="act-btns">
+        <button class="btn btn-outline btn-xs" onclick="copyStaffCode('${st.id}')">Nakili Code</button>
+        <a class="btn btn-green btn-xs" target="_blank" href="${staffWaLink(shop, st)}">WhatsApp</a>
+        ${susp ? `<button class="btn btn-green btn-xs" onclick="toggleStaff('${st.id}','active')">Rejesha</button>`
+               : `<button class="btn btn-outline btn-xs" onclick="toggleStaff('${st.id}','suspended')">Simamisha</button>`}
+        <button class="btn btn-red btn-xs" onclick="delStaff('${st.id}')">Futa</button>
+      </div></td></tr>`;
+  }).join('');
+  body.innerHTML = head+info+`<div class="tbl-card"><div class="scroll-x"><table><thead><tr><th>Mfanyakazi</th><th>Code ya Kuingia</th><th>Hali</th><th>Hatua</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
+function staffWaLink(shop, st){
+  const code = shop.id+'-'+st.id;
+  const origin = (typeof location!=='undefined' && location.origin && location.origin!=='null') ? location.origin : '';
+  const text = 'Habari '+st.name+', code yako ya kuingia Mauzo Daily (duka: '+shop.shopName+') ni: '+code+'. Fungua '+origin+' → Ingia → Akaunti ya Kina → Ingia Mfanyakazi, kisha andika code hii.';
+  let digits = String(st.phone||'').replace(/\D/g,'');
+  if(digits.startsWith('0')) digits = '255'+digits.slice(1);
+  return 'https://wa.me/'+digits+'?text='+encodeURIComponent(text);
+}
+function copyStaffCode(id){
+  const shop = window._SHOP.shop; const code = shop.id+'-'+id;
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(code).then(()=>toast('Code imenakiliwa: '+code,'s')).catch(()=>prompt('Nakili code hii:', code));
+  } else { prompt('Nakili code hii:', code); }
+}
+function openAddStaff(){
+  if(!isOwner()) return denyEdit();
+  document.getElementById('stForm').reset();
+  const m = document.getElementById('stfmsg'); m.textContent=''; m.className='mmsg';
+  om('mStaff');
+}
+async function doAddStaff(e){
+  e.preventDefault();
+  if(!isOwner()) return false;
+  const shop = window._SHOP.shop;
+  const msg = document.getElementById('stfmsg'); msg.className='mmsg'; msg.textContent='';
+  const name = document.getElementById('sf_name').value.trim();
+  const phone = document.getElementById('sf_phone').value.trim();
+  if(!name){ msg.textContent='Weka jina la mfanyakazi.'; msg.className='mmsg err'; return false; }
+  const btn = document.getElementById('btnStaff'); btn.disabled=true;
+  try{
+    const sid = await uniqueStaffCode(shop.id);
+    await dbSetDoc(shop.id,'staff', sid, { name, phone, status:'active', addedBy:VIEWER });
+    cm('mStaff'); toast('Mfanyakazi ameongezwa. Code yake: '+shop.id+'-'+sid,'s');
+    await renderStaffTab();
+  }catch(err){ msg.textContent = stockErrMsg(err); msg.className='mmsg err'; }
+  finally{ btn.disabled=false; }
+  return false;
+}
+async function toggleStaff(id, to){
+  if(!isOwner()) return denyEdit();
+  const shop = window._SHOP.shop;
+  if(to==='suspended' && !confirm('Simamisha mfanyakazi huyu? Hataweza kuingia hadi umrejeshe.')) return;
+  await dbUpdateDoc(shop.id,'staff', id, { status:to });
+  toast(to==='suspended' ? 'Mfanyakazi amesimamishwa' : 'Mfanyakazi amerejeshwa','s');
+  await renderStaffTab();
+}
+async function delStaff(id){
+  if(!isOwner()) return denyEdit();
+  const shop = window._SHOP.shop;
+  if(!confirm('Futa mfanyakazi huyu? Code yake itaacha kufanya kazi. Mauzo aliyoyarekodi yanabaki.')) return;
+  await dbDeleteDoc(shop.id,'staff', id);
+  toast('Mfanyakazi amefutwa','s');
+  await renderStaffTab();
 }
 </script>
 </body>
