@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="sw"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mauzo Daily</title><meta name="robots" content="noindex">
+<style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0f0c29;color:#f8fafc;font-family:system-ui,sans-serif;text-align:center;padding:24px}
+.b{max-width:420px}h1{font-size:22px;margin:0 0 10px}p{color:#cbd5e1;line-height:1.6;margin:0 0 18px}
+a.btn{display:inline-block;background:linear-gradient(135deg,#fbbf24,#fb923c);color:#1a1200;font-weight:700;text-decoration:none;padding:12px 22px;border-radius:12px}</style>
+</head><body><div class="b"><h1>Anwani hii haipo</h1>
+<p>Inakupeleka kwenye ukurasa mkuu wa Mauzo Daily. Data zako zote ziko salama.</p>
+<a class="btn" id="go" href="/">Fungua Mauzo Daily</a></div>
+<script>
+// Netlify: ukurasa mkuu ni "/". GitHub Pages (mradi): ni "/jina-la-repo/".
+(function(){
+  var parts = location.pathname.split('/').filter(Boolean);
+  var base = (/\.github\.io$/.test(location.hostname) && parts.length) ? '/' + parts[0] + '/' : '/';
+  document.getElementById('go').setAttribute('href', base);
+  setTimeout(function(){ location.replace(base); }, 1200);
+})();
+</script></body></html>
